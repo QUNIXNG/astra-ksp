@@ -548,6 +548,8 @@ namespace KspAutomationBridge
             d["requested"] = true;
             d["saveFolder"] = folder;
             d["saveFile"] = file;
+            d["persistentSaveOverwritten"] = true;
+            d["note"] = "The loaded game is written back as persistent.sfs before the scene starts (stock KSP behavior).";
             d["scene"] = scene;
             if (focus != null)
             {
@@ -687,7 +689,8 @@ namespace KspAutomationBridge
             }
             d["requested"] = true;
             d["sceneReload"] = true;
-            d["note"] = "Poll GET /state until scene is FLIGHT and activeVessel.persistentId matches.";
+            d["persistentSaveOverwritten"] = true;
+            d["note"] = "The current game was saved to persistent.sfs. Poll GET /state until scene is FLIGHT and activeVessel.persistentId matches.";
             return d;
         }
 

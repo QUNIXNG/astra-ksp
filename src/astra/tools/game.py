@@ -163,6 +163,8 @@ def game_load_save(
 
     Goes through the bridge (kRPC cannot switch save folders). Loading takes tens of seconds.
     Returns the scene, UT and active vessel. In flight the game is then paused for deliberation.
+    The loaded game is written back as `persistent.sfs` before the scene starts; the result includes
+    `persistent_save_overwritten` so the caller can record this explicitly.
     """
     if not save or save.strip() != save or any(c in save for c in '/\\:') or ".." in save:
         raise AstraError(f"bad save folder name {save!r}", "give the folder name only, as game_status 'save' shows it")
@@ -178,7 +180,7 @@ def game_load_save(
         raise AstraError(f"the game did not reach {scene} after loading {save!r}",
                          "call game_status; check game_log for load errors")
     reset_links()
-    out: dict[str, Any] = {"save": save, "scene": got, "ut": k.sc.ut}
+    out: dict[str, Any] = {"save": save, "scene": got, "ut": k.sc.ut, "persistent_save_overwritten": True}
     if got == "flight":
         out["active_vessel"] = vessel_brief(k.vessel())
         out["paused"] = k.hold_for_deliberation()
@@ -401,13 +403,17 @@ def game_launch(
     crew: Annotated[list[str], Field(description="Kerbal names to seat, e.g. ['Jebediah Kerman']. [] lets KSP "
                                                  "assign its default crew (probes need none). Use "
                                                  "crew_roster to see who is available.")],
+    recover_site: Annotated[bool, Field(
+        description="If true, recover vessels already sitting on the launch site before launching. "
+                    "Default false: refuses instead, so an old craft is never silently removed.")] = False,
 ) -> dict:
     """Launch a craft file onto a launch site with the crew you choose, and verify it on the pad.
 
-    Uses KSP's own pre-flight checks and recovers any vessel sitting on the site first. Launch from
-    the space center (or editor); from flight, leave with game_space_center first. The result gives
-    the vessel's name (KSP may append a localized suffix), situation, parts, mass, crew aboard,
-    and current stage; `crew_missing` lists requested kerbals who are not aboard. The game is
+    Uses KSP's own pre-flight checks. If a vessel already sits on the launch site, the launch is
+    refused unless `recover_site` is explicitly true; in that case KSP recovers the old vessel first.
+    Launch from the space center (or editor); from flight, leave with game_space_center first. The
+    result gives the vessel's name (KSP may append a localized suffix), situation, parts, mass, crew
+    aboard, and current stage; `crew_missing` lists requested kerbals who are not aboard. The game is
     paused on the pad for deliberation.
     """
     k = ksp()
@@ -430,8 +436,21 @@ def game_launch(
         status = enum_name(member.roster_status)
         if status != "available":
             raise AstraError(f"{kerbal} is {status}, not available", "choose an available kerbal (crew_roster)")
+    blockers: list[dict[str, Any]] = []
     try:
-        sc.launch_vessel(directory, name, site_name, True, list(crew), "")
+        sites_state = k.bridge.get("/state", timeout=5.0).get("launchSites") or {}
+        site_state = sites_state.get(site_name) or {}
+        blockers = list(site_state.get("blockers") or [])
+    except Exception:  # noqa: BLE001 — the bridge is optional; kRPC still refuses a blocked pad
+        pass
+    if blockers and not recover_site:
+        names = ", ".join(str(b.get("name", "unnamed vessel")) for b in blockers)
+        raise AstraError(
+            f"{site_name} is occupied by {names}",
+            "choose another site, recover that vessel, or pass recover_site=true to let KSP recover it "
+            "before launching")
+    try:
+        sc.launch_vessel(directory, name, site_name, recover_site, list(crew), "")
     except Exception as exc:  # noqa: BLE001 — KSP's pre-flight refusals arrive as RPC errors
         raise AstraError(f"KSP refused the launch: {exc}",
                          "pre-flight checks need a control source (crew or probe core), existing "
@@ -444,7 +463,7 @@ def game_launch(
     info = vessel_brief(v)
     aboard = set(info["crew"])
     out: dict[str, Any] = {"craft": name, "directory": directory, "site": site_name, "vessel": info,
-                           "crew_capacity": v.crew_capacity}
+                           "crew_capacity": v.crew_capacity, "recovered_site": recover_site}
     missing = [c for c in crew if c not in aboard]
     if missing:
         out["crew_missing"] = missing

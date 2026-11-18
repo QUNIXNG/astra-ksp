@@ -154,8 +154,8 @@ extra, optional ones during review) are in the generated `docs/TOOLS.md` (`astra
   active mission.
 - `game_load_save(save, scene)` — works from the main menu (bridge `/load-save`).
 - `game_checkpoint(name)`, `game_restore(name)`, `game_revert(to: "launch"|"editor")`.
-- `game_launch(craft, site, crew)` — kRPC `launch_vessel` (pass `crew` list explicitly; recovers
-  pad blockers); verifies the vessel exists, reports crew seated and parts count.
+- `game_launch(craft, site, crew, recover_site)` — kRPC `launch_vessel` (pass `crew` list explicitly; refuses
+  pad blockers unless `recover_site=true`, then lets KSP recover them); verifies the vessel exists, reports crew seated and parts count.
 - `game_list_vessels()`, `game_switch_vessel(name)`, `game_recover()`, `game_space_center()`,
   `game_pause(paused)`, `game_log(lines, pattern)` (tail KSP.log for exceptions).
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,12 +27,35 @@ def _running_ksp_dir() -> Path | None:
     return Path(out).parent if out else None
 
 
+def _steam_ksp_dirs() -> list[Path]:
+    """Find KSP in Steam's default library and additional library folders."""
+    if os.name != "nt":
+        return []
+    steam = Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")) / "Steam"
+    candidates = [steam]
+    try:
+        library_file = steam / "steamapps" / "libraryfolders.vdf"
+        text = library_file.read_text(encoding="utf-8-sig")
+        for match in re.finditer(r'"path"\s+"((?:[^"\\]|\\.)+)"', text):
+            escaped = match.group(1).replace("\\\\", "\\").replace('\\"', '"')
+            candidates.append(Path(escaped))
+    except (OSError, UnicodeError):
+        pass
+    result = []
+    for library in candidates:
+        install = library / "steamapps" / "common" / "Kerbal Space Program"
+        if (install / "KSP_x64.exe").is_file():
+            result.append(install)
+    return result
+
+
 def _ksp_dir() -> Path:
     env = os.environ.get("ASTRA_KSP_DIR")
     if env:
         return Path(env)
-    if DEFAULT_KSP_DIR.exists():
-        return DEFAULT_KSP_DIR
+    steam_dirs = _steam_ksp_dirs()
+    if steam_dirs:
+        return steam_dirs[0]
     return _running_ksp_dir() or DEFAULT_KSP_DIR
 
 

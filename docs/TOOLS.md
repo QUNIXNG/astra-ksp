@@ -462,10 +462,11 @@ Reverting to the editor goes through the bridge (kRPC cannot).
 
 Launch a craft file onto a launch site with the crew you choose, and verify it on the pad.
 
-Uses KSP's own pre-flight checks and recovers any vessel sitting on the site first. Launch from
-the space center (or editor); from flight, leave with game_space_center first. The result gives
-the vessel's name (KSP may append a localized suffix), situation, parts, mass, crew aboard,
-and current stage; `crew_missing` lists requested kerbals who are not aboard. The game is
+Uses KSP's own pre-flight checks. If a vessel already sits on the launch site, the launch is
+refused unless `recover_site` is explicitly true; in that case KSP recovers the old vessel first.
+Launch from the space center (or editor); from flight, leave with game_space_center first. The
+result gives the vessel's name (KSP may append a localized suffix), situation, parts, mass, crew
+aboard, and current stage; `crew_missing` lists requested kerbals who are not aboard. The game is
 paused on the pad for deliberation.
 
 | parameter | required | description |
@@ -473,6 +474,7 @@ paused on the pad for deliberation.
 | `craft` | yes | Craft name as saved in this save's Ships/VAB or Ships/SPH (craft_list shows them; tolerant matching). |
 | `site` | yes | Launch site: 'LaunchPad' or 'Runway', or another site KSP offers (an unknown name lists them). |
 | `crew` | yes | Kerbal names to seat, e.g. ['Jebediah Kerman']. [] lets KSP assign its default crew (probes need none). Use crew_roster to see who is available. |
+| `recover_site` | no | Default false. Set true to recover a vessel already on the site before launching; otherwise the launch is refused with the blocker's name. |
 
 ### `game_list_vessels`
 

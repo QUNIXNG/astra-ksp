@@ -771,7 +771,8 @@ def test_game_launch_validates_and_passes_an_explicit_crew_list(k):
         fly_vessel(k, Vessel(f"{name} 飞船", situation=VesselSituation.pre_launch, crew=crew_list))
     k.sc.on_launch = on_launch
     out = call("game_launch", craft="orbiter", site="launchpad", crew=["Jebediah Kerman"])
-    assert k.sc.launch_calls == [("VAB", "Orbiter 1", "LaunchPad", True, ["Jebediah Kerman"], "")]
+    assert k.sc.launch_calls == [("VAB", "Orbiter 1", "LaunchPad", False, ["Jebediah Kerman"], "")]
+    assert out["recovered_site"] is False
     assert out["vessel"]["name"] == "Orbiter 1 飞船" and out["vessel"]["situation"] == "pre_launch"
     assert "crew_missing" not in out and out["paused"] is True
     k._scene = "space_center"
@@ -787,6 +788,37 @@ def test_game_launch_validates_and_passes_an_explicit_crew_list(k):
     k._scene = "flight"
     with pytest.raises(WrongScene):
         call("game_launch", craft="Orbiter 1", site="LaunchPad", crew=[])
+
+
+def test_game_launch_refuses_an_occupied_site_without_explicit_recovery(k):
+    k._scene = "space_center"
+    k.bridge.replies[("GET", "/state")] = {
+        "launchSites": {"LaunchPad": {"blockers": [{"name": "Old Orbiter", "persistentId": 7}]}}
+    }
+    with pytest.raises(AstraError) as exc:
+        call("game_launch", craft="Orbiter 1", site="LaunchPad", crew=["Jebediah Kerman"])
+    assert "Old Orbiter" in exc.value.message
+    assert "recover_site=true" in exc.value.hint
+    assert k.sc.launch_calls == []  # the old craft was not silently recovered
+
+    k.sc.on_launch = lambda directory, name, *args: (
+        setattr(k, "_scene", "flight"),
+        fly_vessel(k, Vessel(name, situation=VesselSituation.pre_launch, crew=[])))
+    out = call("game_launch", craft="Orbiter 1", site="LaunchPad", crew=["Jebediah Kerman"], recover_site=True)
+    assert out["recovered_site"] is True
+    assert k.sc.launch_calls[-1][3] is True
+
+
+def test_game_launch_other_sites_are_not_blocked_by_the_launch_pad(k):
+    k._scene = "space_center"
+    k.bridge.replies[("GET", "/state")] = {
+        "launchSites": {"LaunchPad": {"blockers": [{"name": "Old Orbiter"}]}}
+    }
+    k.sc.on_launch = lambda directory, name, *args: (
+        setattr(k, "_scene", "flight"),
+        fly_vessel(k, Vessel(name, situation=VesselSituation.pre_launch, crew=[])))
+    call("game_launch", craft="Probe X", site="Runway", crew=[])
+    assert k.sc.launch_calls[-1][2] == "Runway"
 
 
 def test_game_switch_vessel_goes_through_the_bridge_by_persistent_id(k):

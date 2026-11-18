@@ -25,6 +25,7 @@ namespace KspAutomationBridge
         internal static bool Listening;
 
         private static bool _mechJebTickFailed;
+        private static string _authToken;
 
         private HttpServer _server;
         private CapcomWindow _capcom;
@@ -60,6 +61,19 @@ namespace KspAutomationBridge
             Safely("MechJeb detection", MechJebInfo.Detect);
             Safely("EVA walker", EvaWalker.Install);
             Port = ReadPort();
+            try
+            {
+                _authToken = ReadOrCreateToken();
+            }
+            catch (Exception ex)
+            {
+                // Fail closed: never expose an unauthenticated control server if the token cannot be persisted.
+                BridgeLog.RecordError("Could not create the bridge access token; HTTP control is disabled", ex);
+                _capcom = new CapcomWindow();
+                _capcom.Start();
+                StartCoroutine(Recorder.Loop());
+                return;
+            }
 
             Router router = new Router(Jobs);
             router.RegisterBuiltins();
@@ -72,12 +86,13 @@ namespace KspAutomationBridge
             Safely("screenshot routes", delegate { ScreenshotRoutes.Register(router); });
             Safely("recorder routes", delegate { Recorder.Register(router); });
 
-            _server = new HttpServer(router);
+            _server = new HttpServer(router, _authToken);
             try
             {
                 _server.Start(IPAddress.Loopback, Port);
                 Listening = true;
                 BridgeLog.Info("Bridge " + BridgeVersion + " listening on http://127.0.0.1:" + Port
+                    + " (bearer authentication enabled)"
                     + (MechJebInfo.Available ? " (MechJeb " + MechJebInfo.Version + ")" : " (MechJeb not found)"));
             }
             catch (Exception ex)
@@ -147,6 +162,37 @@ namespace KspAutomationBridge
                 _capcom.Destroy();
             }
             Instance = null;
+        }
+
+        /// <summary>
+        /// Reads the bearer token from PluginData/bridge.cfg, creating one on first run. The Python
+        /// client reads the same value from this file, which should be treated as a local credential.
+        /// </summary>
+        private static string ReadOrCreateToken()
+        {
+            string path = Path.Combine(KSPUtil.ApplicationRootPath, "GameData/KspAutomationBridge/PluginData/bridge.cfg");
+            ConfigNode root = File.Exists(path) ? ConfigNode.Load(path) : new ConfigNode();
+            if (root == null)
+            {
+                throw new InvalidDataException("bridge.cfg is not valid ConfigNode text");
+            }
+            string existing = root.GetValue("authToken");
+            if (!string.IsNullOrEmpty(existing) && existing.Trim().Length >= 32)
+            {
+                return existing.Trim();
+            }
+            string token = BridgeSecurity.NewToken();
+            root.SetValue("authToken", token, true);
+            string directory = Path.GetDirectoryName(path);
+            if (!Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+            if (!root.Save(path))
+            {
+                throw new IOException("could not save " + path);
+            }
+            return token;
         }
 
         /// <summary>Port from GameData/KspAutomationBridge/PluginData/bridge.cfg (`port = N`), else 48500.</summary>

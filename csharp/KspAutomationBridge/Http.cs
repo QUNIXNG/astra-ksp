@@ -651,14 +651,16 @@ namespace KspAutomationBridge
         private static readonly byte[] HeaderTerminator = { 13, 10, 13, 10 };
 
         private readonly Router _router;
+        private readonly string _token;
         private TcpListener _listener;
         private Thread _acceptThread;
         private volatile bool _running;
         private int _active;
 
-        public HttpServer(Router router)
+        public HttpServer(Router router, string token = null)
         {
             _router = router;
+            _token = token;
         }
 
         public bool Running
@@ -748,7 +750,7 @@ namespace KspAutomationBridge
                 BridgeResult result;
                 try
                 {
-                    BridgeRequest request = ReadRequest(stream);
+                    BridgeRequest request = ReadRequest(stream, _token);
                     if (request == null)
                     {
                         return; // the client connected and closed without sending anything
@@ -924,7 +926,7 @@ namespace KspAutomationBridge
         }
 
         /// <summary>Reads one request; returns null when the peer closed before sending a byte.</summary>
-        internal static BridgeRequest ReadRequest(Stream stream)
+        internal static BridgeRequest ReadRequest(Stream stream, string token = null)
         {
             byte[] chunk = new byte[4096];
             MemoryStream head = new MemoryStream();
@@ -969,6 +971,12 @@ namespace KspAutomationBridge
                 }
             }
             CheckNotCrossSite(headers);
+            string authorization;
+            headers.TryGetValue("Authorization", out authorization);
+            if (!BridgeSecurity.IsAuthorized(token, authorization))
+            {
+                throw new HttpError(401, "Authentication required. Use the bearer token written to GameData/KspAutomationBridge/PluginData/bridge.cfg by astra.");
+            }
 
             string transferEncoding;
             if (headers.TryGetValue("Transfer-Encoding", out transferEncoding)
@@ -1084,6 +1092,7 @@ namespace KspAutomationBridge
             {
                 case 200: return "OK";
                 case 400: return "Bad Request";
+                case 401: return "Unauthorized";
                 case 403: return "Forbidden";
                 case 404: return "Not Found";
                 case 405: return "Method Not Allowed";

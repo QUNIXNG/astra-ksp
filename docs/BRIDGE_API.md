@@ -22,8 +22,13 @@ exactly `Content-Length` bytes and decoded as UTF-8, so non-ASCII text (`"默认
 bodies are refused (411); `Expect: 100-continue` is honoured. Requests a web browser sends on behalf
 of a web page are refused with 403 before anything runs: any `Origin` header, a `Sec-Fetch-Site`
 other than `none`, or a `Host` that is not `127.0.0.1`/`localhost`/`[::1]` (any page can POST to
-localhost without a CORS preflight, and DNS rebinding would let it read responses). Local tools
-(astra, curl) send none of these; a URL typed into the browser's address bar still works.
+localhost without a CORS preflight, and DNS rebinding would let it read responses).
+
+On first start the plugin generates a random token, stores it beside `port` in `bridge.cfg`, and
+rejects every request without `Authorization: Bearer <token>` (401). The astra Python client reads
+the same file. For manual inspection: `curl -H "Authorization: Bearer <token>"
+http://127.0.0.1:48500/state`. Treat `bridge.cfg` as a credential file; do not paste the token into
+screenshots or bug reports. Set `ASTRA_BRIDGE_TOKEN` to override the file on the client side.
 
 **Envelope.** Success: `{"ok": true, ...data, "jobId": N}`. Failure:
 `{"ok": false, "error": "...", "hint": "...", "jobId": N}` with an HTTP status:
@@ -34,6 +39,7 @@ localhost without a CORS preflight, and DNS rebinding would let it read response
 | 404 | Unknown route, or the vessel/part/kerbal/save you named does not exist. |
 | 405 | Route exists with another method. |
 | 403 | Refused browser/cross-site request (see Transport). |
+| 401 | Missing or wrong bearer token (see Transport). |
 | 409 | Wrong game state for this call (scene, paused, autopilot already engaged, hatch blocked...). |
 | 500 | Unexpected plugin exception (`GET /state` `lastError`, KSP.log has the stack trace). |
 | 501 | The platform cannot do what was asked (video recording on a GPU/driver without `AsyncGPUReadback`). |
@@ -228,7 +234,7 @@ Works from the main menu and from any loaded scene.
 | `scene` | `spacecenter`\|`flight` | no | Default `spacecenter`. |
 | `vesselPersistentId` | uint | no | With `scene=flight`: focus this vessel instead of the save's active one. |
 
-Returns `{requested, saveFolder, saveFile, scene, vessel?: {name, persistentId}, note}`. Like the
+Returns `{requested, saveFolder, saveFile, scene, persistentSaveOverwritten: true, vessel?: {name, persistentId}, note}`. Like the
 stock load dialog, the loaded game is written back as `persistent.sfs` before the scene starts (so a
 restored checkpoint becomes the current save) and `onGameStatePostLoad` is fired with the loaded file
 (stock listeners such as the message system and Breaking Ground's deployed science rebuild from it).
@@ -255,7 +261,8 @@ From the space center / tracking station: saves `persistent` and loads flight fo
 (the tracking station "Fly" path). In flight: switches in place if loaded, else KSP saves and reloads
 flight. Only vessels the space program owns can be flown (409 for asteroids, comets and unowned
 vessels, as the tracking station's Fly button refuses them; `/vessels` shows `owned`). Returns
-`{vessel, requested, sceneReload, note?}`.
+`{vessel, requested, sceneReload, note?}`; a scene reload from the space center also returns
+`persistentSaveOverwritten: true`.
 
 ### POST /revert
 `to`: `launch`|`editor` (required). Flight only; 409 if KSP says the revert is unavailable. The

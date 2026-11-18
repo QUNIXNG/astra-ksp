@@ -8,6 +8,8 @@ bodies are JSON objects; parameters may be native values or strings.
 from __future__ import annotations
 
 import json
+import os
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -25,6 +27,21 @@ class Bridge:
         if host not in {"127.0.0.1", "localhost"}:
             raise BridgeError("refusing to talk to a non-local bridge", "set ASTRA_BRIDGE_URL to a localhost URL")
         self.timeout = timeout
+        self._token = self._read_token()
+
+    @staticmethod
+    def _read_token() -> str | None:
+        """The bridge creates its bearer token by itself; read the same file it writes."""
+        env = os.environ.get("ASTRA_BRIDGE_TOKEN", "").strip()
+        if env:
+            return env
+        path = CONFIG.gamedata_dir / "KspAutomationBridge" / "PluginData" / "bridge.cfg"
+        try:
+            text = path.read_text(encoding="utf-8-sig")
+        except OSError:
+            return None
+        match = re.search(r"^\s*authToken\s*=\s*([^\s#;]+)", text, re.MULTILINE)
+        return match.group(1).strip() if match else None
 
     def up(self) -> bool:
         u = urlparse(self.base_url)
@@ -45,6 +62,8 @@ class Bridge:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
         req = urllib.request.Request(self.base_url + path, data=data, method=method,
                                      headers={"Content-Type": "application/json; charset=utf-8"})
+        if self._token:
+            req.add_header("Authorization", "Bearer " + self._token)
         try:
             with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
                 body = resp.read().decode("utf-8", errors="replace")

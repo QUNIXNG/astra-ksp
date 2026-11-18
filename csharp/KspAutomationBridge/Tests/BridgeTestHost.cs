@@ -36,7 +36,7 @@ namespace KspAutomationBridge
             {
                 return HarmonyProbe(args.Length > 1 ? args[1] : null);
             }
-            return Serve();
+            return Serve(args.Length > 1 ? args[1] : null);
         }
 
         private static int HarmonyProbe(string harmonyPath)
@@ -72,7 +72,7 @@ namespace KspAutomationBridge
             }
         }
 
-        private static int Serve()
+        private static int Serve(string token)
         {
             BridgeLog.InfoSink = delegate(string m) { Console.Error.WriteLine(m); };
             BridgeLog.WarnSink = BridgeLog.InfoSink;
@@ -165,7 +165,7 @@ namespace KspAutomationBridge
                 return d;
             }, "simulates the player typing in the panel");
 
-            HttpServer server = new HttpServer(r);
+            HttpServer server = new HttpServer(r, token);
             server.Start(IPAddress.Loopback, 0);
             Thread pump = new Thread(Pump);
             pump.IsBackground = true;

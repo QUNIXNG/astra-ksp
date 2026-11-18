@@ -26,7 +26,7 @@ HERE = Path(__file__).resolve().parent
 SRC = HERE.parent
 REPO = SRC.parents[1]
 OUT = REPO / ".scratch" / "bridge_host"
-PURE_SOURCES = ["Json.cs", "Http.cs", "MainThread.cs", "Capcom.cs", "HarmonyReflect.cs", "PausePlanner.cs", "EvaMath.cs",
+PURE_SOURCES = ["BridgeSecurity.cs", "Json.cs", "Http.cs", "MainThread.cs", "Capcom.cs", "HarmonyReflect.cs", "PausePlanner.cs", "EvaMath.cs",
                 "FrameQueue.cs"]
 
 
@@ -70,6 +70,37 @@ def server(host_exe):
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+@pytest.fixture(scope="module")
+def secure_server(host_exe):
+    with open(OUT / "secure_host_stderr.log", "wb") as log:
+        proc = subprocess.Popen([str(host_exe), "serve", "correct-token"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log)
+        line = proc.stdout.readline().decode().strip()
+        assert line.startswith("PORT "), line
+        yield int(line.split()[1])
+        proc.stdin.close()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+@pytest.mark.parametrize("authorization", [None, "Bearer wrong-token", "Basic correct-token", "correct-token"])
+def test_bridge_rejects_missing_or_incorrect_bearer_tokens(secure_server, authorization):
+    headers = {"Content-Type": "application/json; charset=utf-8"}
+    if authorization:
+        headers["Authorization"] = authorization
+    status, data = call(secure_server, "POST", "/test/counter", body={}, headers=headers)
+    assert status == 401 and data["ok"] is False
+    status, data = call(secure_server, "GET", "/test/counter-value")
+    assert status == 401  # even read-only telemetry requires the token
+
+
+def test_bridge_accepts_correct_bearer_token(secure_server):
+    headers = {"Content-Type": "application/json; charset=utf-8", "Authorization": "Bearer correct-token"}
+    status, data = call(secure_server, "POST", "/test/counter", body={}, headers=headers)
+    assert status == 200 and data["counter"] == 1
 
 
 def call(port, method, path, body=None, raw=None, headers=None, timeout=10.0):

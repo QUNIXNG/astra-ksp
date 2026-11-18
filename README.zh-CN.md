@@ -140,7 +140,7 @@ ASTRA 把一局正在运行的《坎巴拉太空计划》（KSP 1）变成 74 �
 - Python 3.11+
 - 已登录的 Claude Code。全自动运行器复用本机的这份登录，不需要 API key。
 
-ASTRA 会先在 Steam 默认目录里找 KSP，再找正在运行的 `KSP_x64.exe`；如果装在别处，请设置 `ASTRA_KSP_DIR`。
+ASTRA 会在 Steam 默认目录和 `libraryfolders.vdf` 里登记的其他库中查找 KSP，再查正在运行的 `KSP_x64.exe`；都找不到时请设置 `ASTRA_KSP_DIR`。首次启动时桥接插件会把访问令牌写入 `GameData/KspAutomationBridge/PluginData/bridge.cfg`，Python 客户端会自动读取；其他本机工具需带 `Authorization: Bearer <令牌>`。
 
 **1. 克隆并安装。** 可选扩展有 `agent`（Claude Agent SDK）、`media`（imageio-ffmpeg，录像用）和 `dev`（pytest）。
 

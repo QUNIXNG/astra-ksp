@@ -167,8 +167,10 @@ can answer.
 - Python 3.11+
 - Claude Code, signed in. The autonomous runner reuses that local login, so no API key is needed.
 
-ASTRA looks for KSP in the default Steam folder, then for a running `KSP_x64.exe`; set
-`ASTRA_KSP_DIR` if yours is elsewhere.
+ASTRA finds KSP in Steam's default folder and the extra libraries listed in `libraryfolders.vdf`,
+then checks for a running `KSP_x64.exe`; set `ASTRA_KSP_DIR` to override discovery. On first start
+the bridge writes a bearer token to `GameData/KspAutomationBridge/PluginData/bridge.cfg`, which the
+Python client reads automatically; other local tools must send `Authorization: Bearer <token>`.
 
 **1. Clone and install.** The extras are `agent` (Claude Agent SDK), `media` (imageio-ffmpeg, for
 filming) and `dev` (pytest).
