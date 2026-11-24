@@ -119,6 +119,18 @@ namespace KspAutomationBridge
             return true;
         }
 
+        private static bool Set(BridgeRequest req, string key, EditableDouble target, JObj applied)
+        {
+            double? v = req.Num(key);
+            if (!v.HasValue)
+            {
+                return false;
+            }
+            target.Val = v.Value;
+            applied[key] = v.Value;
+            return true;
+        }
+
         private static bool Set(BridgeRequest req, string key, EditableInt target, JObj applied)
         {
             int? v = req.Int(key);
@@ -228,8 +240,7 @@ namespace KspAutomationBridge
         private static bool AscentEngaged(MechJebCore core)
         {
             MechJebModuleAscentClassicAutopilot classic = core.GetComputerModule<MechJebModuleAscentClassicAutopilot>();
-            MechJebModuleAscentPVGAutopilot pvg = core.GetComputerModule<MechJebModuleAscentPVGAutopilot>();
-            return (classic != null && classic.Enabled) || (pvg != null && pvg.Enabled);
+            return classic != null && classic.Enabled;
         }
 
         private static JObj Ascent(BridgeRequest req)
@@ -244,11 +255,23 @@ namespace KspAutomationBridge
                     "POST /mj-abort {modules: ascent} first, then configure and engage again.");
             }
             JObj applied = new JObj();
+            List<object> warnings = new List<object>();
             string type = req.Choice("ascentType", new[] { "classic", "pvg" }, null); // guidance is the caller's choice
+            if (type == "pvg")
+            {
+                throw new BridgeException(503, "MechJeb 2.16 replaced the PVG ascent autopilot with PSG.",
+                    "Pass ascentType=classic; this bridge does not drive PSG.");
+            }
+            MechJebModuleAscentClassicAutopilot classic = core.GetComputerModule<MechJebModuleAscentClassicAutopilot>();
+            if (classic == null)
+            {
+                throw new BridgeException(503, "MechJeb has no classic ascent autopilot module.",
+                    "MechJeb 2.16 ships MechJebModuleAscentClassicAutopilot; check that the part carries a MechJebCore.");
+            }
             double altitude = req.RequireNum("altitude");
             double inclination = req.RequireNum("inclination");
             bool autostage = req.RequireBool("autostage");
-            s.AscentType = type == "pvg" ? AscentType.PVG : AscentType.CLASSIC;
+            s.AscentType = AscentType.CLASSIC;
             applied["ascentType"] = type;
             s.DesiredOrbitAltitude.Val = altitude;
             s.DesiredInclination.Val = inclination;
@@ -257,37 +280,47 @@ namespace KspAutomationBridge
             applied["inclination"] = s.DesiredInclination.Val;
             applied["autostage"] = s.Autostage;
 
+            // MechJeb 2.16 moved the whole gravity-turn block off AscentSettings and onto the classic
+            // autopilot module; the members themselves are unchanged, only their owner is.
             bool? b;
-            if ((b = Flag(req, "autoPath", applied)).HasValue) s.AutoPath = b.Value;
+            if ((b = Flag(req, "autoPath", applied)).HasValue) classic.AutoPath = b.Value;
             double? f;
-            if ((f = req.Num("autoTurnPercent")).HasValue) { s.AutoTurnPerc = (float)f.Value; applied["autoTurnPercent"] = f.Value; }
-            if ((f = req.Num("autoTurnSpeedFactor")).HasValue) { s.AutoTurnSpdFactor = (float)f.Value; applied["autoTurnSpeedFactor"] = f.Value; }
-            Set(req, "turnStartAltitude", s.TurnStartAltitude, applied);
-            Set(req, "turnStartVelocity", s.TurnStartVelocity, applied);
-            Set(req, "turnEndAltitude", s.TurnEndAltitude, applied);
-            Set(req, "turnEndAngle", s.TurnEndAngle, applied);
-            Set(req, "turnShapeExponent", s.TurnShapeExponent, applied);
-            if ((b = Flag(req, "limitAoA", applied)).HasValue) s.LimitAoA = b.Value;
-            Set(req, "maxAoA", s.MaxAoA, applied);
-            Set(req, "aoaFadeoutPressure", s.AOALimitFadeoutPressure, applied);
-            if ((b = Flag(req, "correctiveSteering", applied)).HasValue) s.CorrectiveSteering = b.Value;
-            Set(req, "correctiveSteeringGain", s.CorrectiveSteeringGain, applied);
+            if ((f = req.Num("autoTurnPercent")).HasValue) { classic.AutoTurnPerc = (float)f.Value; applied["autoTurnPercent"] = f.Value; }
+            if ((f = req.Num("autoTurnSpeedFactor")).HasValue) { classic.AutoTurnSpdFactor = (float)f.Value; applied["autoTurnSpeedFactor"] = f.Value; }
+            Set(req, "turnStartAltitude", classic.TurnStartAltitude, applied);
+            Set(req, "turnStartVelocity", classic.TurnStartVelocity, applied);
+            Set(req, "turnEndAltitude", classic.TurnEndAltitude, applied);
+            Set(req, "turnEndAngle", classic.TurnEndAngle, applied);
+            Set(req, "turnShapeExponent", classic.TurnShapeExponent, applied);
+            if ((b = Flag(req, "limitAoA", applied)).HasValue) classic.LimitAoA = b.Value;
+            Set(req, "maxAoA", classic.MaxAoA, applied);
+            Set(req, "aoaFadeoutPressure", classic.AOALimitFadeoutPressure, applied);
+            if ((b = Flag(req, "correctiveSteering", applied)).HasValue) classic.CorrectiveSteering = b.Value;
+            Set(req, "correctiveSteeringGain", classic.CorrectiveSteeringGain, applied);
             if ((b = Flag(req, "forceRoll", applied)).HasValue) s.ForceRoll = b.Value;
             Set(req, "verticalRoll", s.VerticalRoll, applied);
             Set(req, "turnRoll", s.TurnRoll, applied);
             Set(req, "rollAltitude", s.RollAltitude, applied);
-            if ((b = Flag(req, "skipCircularization", applied)).HasValue) s.SkipCircularization = b.Value;
-            Set(req, "desiredLan", s.DesiredLan, applied);
-            Set(req, "launchPhaseAngle", s.LaunchPhaseAngle, applied);
+            if ((b = Flag(req, "skipCircularization", applied)).HasValue) classic.SkipCircularization = b.Value;
             Set(req, "launchLanDifference", s.LaunchLANDifference, applied);
-            if ((b = Flag(req, "autodeploySolarPanels", applied)).HasValue) s.AutodeploySolarPanels = b.Value;
+            if (req.Has("desiredLan"))
+            {
+                warnings.Add("desiredLan is gone in MechJeb 2.16; ignored.");
+            }
+            if (req.Has("launchPhaseAngle"))
+            {
+                warnings.Add("launchPhaseAngle is gone in MechJeb 2.16; ignored.");
+            }
+            if ((b = Flag(req, "autodeploySolarPanels", applied)).HasValue) s.AutoDeploySolarPanels = b.Value;
             if ((b = Flag(req, "autoDeployAntennas", applied)).HasValue) s.AutoDeployAntennas = b.Value;
-            if ((b = Flag(req, "limitQaEnabled", applied)).HasValue) s.LimitQaEnabled = b.Value;
-            Set(req, "limitQa", s.LimitQa, applied);
-            ApplyStaging(req, st, applied);
+            if (req.Has("limitQaEnabled") || req.Has("limitQa"))
+            {
+                warnings.Add("limitQa and limitQaEnabled are gone in MechJeb 2.16 (thrust limits replaced them); ignored.");
+            }
+            ApplyStaging(req, st, applied, warnings);
 
             bool engage = req.Bool("engage", true);
-            MechJebModuleAscentBaseAutopilot ap = s.AscentAutopilot;
+            IAscentAutopilot ap = s.AscentAutopilot;
             if (engage)
             {
                 if (ap == null)
@@ -299,8 +332,12 @@ namespace KspAutomationBridge
             JObj d = new JObj();
             d["engaged"] = ap != null && ap.Enabled;
             d["applied"] = applied;
-            d["effective"] = AscentSettings(s, st);
+            d["effective"] = AscentSettings(s, classic, st);
             d["status"] = ap != null ? ap.Status : null;
+            if (warnings.Count > 0)
+            {
+                d["warnings"] = warnings;
+            }
             d["situation"] = vessel.situation.ToString();
             if (engage && vessel.situation == Vessel.Situations.PRELAUNCH)
             {
@@ -309,7 +346,7 @@ namespace KspAutomationBridge
             return d;
         }
 
-        private static void ApplyStaging(BridgeRequest req, MechJebModuleStagingController st, JObj applied)
+        private static void ApplyStaging(BridgeRequest req, MechJebModuleStagingController st, JObj applied, List<object> warnings)
         {
             bool? b;
             Set(req, "autostagePreDelay", st.AutostagePreDelay, applied);
@@ -322,52 +359,51 @@ namespace KspAutomationBridge
             if ((b = Flag(req, "hotStaging", applied)).HasValue) st.HotStaging = b.Value;
             Set(req, "hotStagingLeadTime", st.HotStagingLeadTime, applied);
             if ((b = Flag(req, "dropSolids", applied)).HasValue) st.DropSolids = b.Value;
-            Set(req, "dropSolidsLeadTime", st.DropSolidsLeadTime, applied);
+            if (req.Has("dropSolidsLeadTime"))
+            {
+                warnings.Add("dropSolidsLeadTime is gone in MechJeb 2.16 (dropSolids is now a TWR curve: DropSolidsTwrPct); ignored.");
+            }
         }
 
-        private static JObj AscentSettings(MechJebModuleAscentSettings s, MechJebModuleStagingController st)
+        private static JObj AscentSettings(MechJebModuleAscentSettings s, MechJebModuleAscentClassicAutopilot classic, MechJebModuleStagingController st)
         {
             JObj e = new JObj();
             e["ascentType"] = s.AscentType.ToString();
             e["altitude"] = s.DesiredOrbitAltitude.Val;
             e["inclination"] = s.DesiredInclination.Val;
             e["autostage"] = s.Autostage;
-            e["autoPath"] = s.AutoPath;
-            e["autoTurnPercent"] = s.AutoTurnPerc;
-            e["autoTurnSpeedFactor"] = s.AutoTurnSpdFactor;
-            e["turnStartAltitude"] = s.TurnStartAltitude.Val;
-            e["turnStartVelocity"] = s.TurnStartVelocity.Val;
-            e["turnEndAltitude"] = s.TurnEndAltitude.Val;
-            e["turnEndAngle"] = s.TurnEndAngle.Val;
-            e["turnShapeExponent"] = s.TurnShapeExponent.Val;
+            e["autoPath"] = classic.AutoPath;
+            e["autoTurnPercent"] = classic.AutoTurnPerc;
+            e["autoTurnSpeedFactor"] = classic.AutoTurnSpdFactor;
+            e["turnStartAltitude"] = classic.TurnStartAltitude.Val;
+            e["turnStartVelocity"] = classic.TurnStartVelocity.Val;
+            e["turnEndAltitude"] = classic.TurnEndAltitude.Val;
+            e["turnEndAngle"] = classic.TurnEndAngle.Val;
+            e["turnShapeExponent"] = classic.TurnShapeExponent.Val;
             try
             {
                 // What the classic path will actually use when autoPath is on (computed from the body).
-                e["autoTurnStartAltitude"] = s.AutoTurnStartAltitude;
-                e["autoTurnStartVelocity"] = s.AutoTurnStartVelocity;
-                e["autoTurnEndAltitude"] = s.AutoTurnEndAltitude;
+                e["autoTurnStartAltitude"] = classic.AutoTurnStartAltitude;
+                e["autoTurnStartVelocity"] = classic.AutoTurnStartVelocity;
+                e["autoTurnEndAltitude"] = classic.AutoTurnEndAltitude;
             }
             catch (Exception)
             {
                 e["autoTurnStartAltitude"] = null;
             }
-            e["limitAoA"] = s.LimitAoA;
-            e["maxAoA"] = s.MaxAoA.Val;
-            e["aoaFadeoutPressure"] = s.AOALimitFadeoutPressure.Val;
-            e["correctiveSteering"] = s.CorrectiveSteering;
-            e["correctiveSteeringGain"] = s.CorrectiveSteeringGain.Val;
+            e["limitAoA"] = classic.LimitAoA;
+            e["maxAoA"] = classic.MaxAoA.Val;
+            e["aoaFadeoutPressure"] = classic.AOALimitFadeoutPressure.Val;
+            e["correctiveSteering"] = classic.CorrectiveSteering;
+            e["correctiveSteeringGain"] = classic.CorrectiveSteeringGain.Val;
             e["forceRoll"] = s.ForceRoll;
             e["verticalRoll"] = s.VerticalRoll.Val;
             e["turnRoll"] = s.TurnRoll.Val;
             e["rollAltitude"] = s.RollAltitude.Val;
-            e["skipCircularization"] = s.SkipCircularization;
-            e["desiredLan"] = s.DesiredLan.Val;
-            e["launchPhaseAngle"] = s.LaunchPhaseAngle.Val;
+            e["skipCircularization"] = classic.SkipCircularization;
             e["launchLanDifference"] = s.LaunchLANDifference.Val;
-            e["autodeploySolarPanels"] = s.AutodeploySolarPanels;
+            e["autoDeploySolarPanels"] = s.AutoDeploySolarPanels;
             e["autoDeployAntennas"] = s.AutoDeployAntennas;
-            e["limitQaEnabled"] = s.LimitQaEnabled;
-            e["limitQa"] = s.LimitQa.Val;
             e["autostagePreDelay"] = st.AutostagePreDelay.Val;
             e["autostagePostDelay"] = st.AutostagePostDelay.Val;
             e["autostageLimit"] = st.AutostageLimit.Val;
@@ -378,7 +414,6 @@ namespace KspAutomationBridge
             e["hotStaging"] = st.HotStaging;
             e["hotStagingLeadTime"] = st.HotStagingLeadTime.Val;
             e["dropSolids"] = st.DropSolids;
-            e["dropSolidsLeadTime"] = st.DropSolidsLeadTime.Val;
             return e;
         }
 
@@ -1004,7 +1039,7 @@ namespace KspAutomationBridge
                 case "hohmann":
                 {
                     OperationGeneric op = new OperationGeneric();
-                    op.Rendezvous = RequiredFlag(req, "rendezvous", settings);
+                    op.MatchOrbit = RequiredFlag(req, "rendezvous", settings);
                     op.Capture = RequiredFlag(req, "capture", settings);
                     bool? b = req.Bool("planCapture");
                     op.PlanCapture = b.HasValue ? b.Value : op.Capture;
@@ -1031,16 +1066,15 @@ namespace KspAutomationBridge
                 }
                 case "interplanetary":
                 {
-                    OperationInterplanetaryTransfer op = new OperationInterplanetaryTransfer();
-                    op.WaitForPhaseAngle = RequiredFlag(req, "waitForPhaseAngle", settings);
-                    return op;
+                    throw new BridgeException(503, "MechJeb 2.16 removed OperationInterplanetaryTransfer.",
+                        "Plan the transfer with the transfer planner or OperationLambert instead.");
                 }
                 case "course_correction":
                 {
                     OperationCourseCorrection op = new OperationCourseCorrection();
                     if (core.Target.Target is CelestialBody)
                     {
-                        op.CourseCorrectFinalPeA.Val = Required(req, "finalPeriapsis", settings);
+                        op.Periapsis.Val = Required(req, "finalPeriapsis", settings);
                     }
                     else
                     {
@@ -1051,7 +1085,7 @@ namespace KspAutomationBridge
                 case "moon_return":
                 {
                     OperationMoonReturn op = new OperationMoonReturn();
-                    op.MoonReturnAltitude.Val = Required(req, "moonReturnAltitude", settings);
+                    op.Periapsis.Val = Required(req, "moonReturnAltitude", settings);
                     return op;
                 }
                 case "resonant_orbit":
@@ -1152,14 +1186,9 @@ namespace KspAutomationBridge
             {
                 bool was = AscentEngaged(core);
                 MechJebModuleAscentClassicAutopilot classic = core.GetComputerModule<MechJebModuleAscentClassicAutopilot>();
-                MechJebModuleAscentPVGAutopilot pvg = core.GetComputerModule<MechJebModuleAscentPVGAutopilot>();
                 if (classic != null)
                 {
                     classic.Users.Clear();
-                }
-                if (pvg != null)
-                {
-                    pvg.Users.Clear();
                 }
                 released["ascent"] = Change(was, AscentEngaged(core));
             }
@@ -1225,7 +1254,7 @@ namespace KspAutomationBridge
             }
             if (all)
             {
-                core.Attitude.attitudeDeactivate();
+                core.Attitude.AttitudeDeactivate();
             }
             if (req.Bool("zeroThrottle", false))
             {
@@ -1290,7 +1319,7 @@ namespace KspAutomationBridge
 
             JObj m = new JObj();
             MechJebModuleAscentSettings s = core.AscentSettings;
-            MechJebModuleAscentBaseAutopilot ascent = s != null ? s.AscentAutopilot : null;
+            IAscentAutopilot ascent = s != null ? s.AscentAutopilot : null;
             JObj a = new JObj();
             a["enabled"] = AscentEngaged(core);
             a["type"] = s != null ? s.AscentType.ToString() : null;
@@ -1422,7 +1451,6 @@ namespace KspAutomationBridge
             d["body"] = gravityBody != null ? gravityBody.bodyName : null;
             d["atmoAltitude_m"] = stats.AltSLT;
             d["mach"] = stats.Mach;
-            d["liveAtmosphere"] = stats.LiveSLT;
             d["vac"] = StageList(stats.VacStats, g);
             d["atmo"] = StageList(stats.AtmoStats, g);
             if ((bool)d["pending"])
