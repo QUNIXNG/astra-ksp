@@ -202,8 +202,13 @@ class Probe:
         except Exception:  # noqa: BLE001 — e.g. NaN orbit fields on escape
             return _NAN
 
-    def _slow(self, name: str, ttl: float, fn: Callable[[], Any]) -> Any:
-        """Cache values that need RPCs (not streams) for `ttl` seconds of wall time."""
+    def _slow(self, name: str, ttl: float, fn: Callable[[], Any], default: Any = _NAN) -> Any:
+        """Cache values that need RPCs (not streams) for `ttl` seconds of wall time.
+
+        `default` is what a failed call yields. Single-value readers leave it at `_NAN`; the two
+        readers that unpack a tuple pass a two-tuple, because a bare `_NAN` cannot be unpacked and
+        would turn any transient RPC failure into a TypeError from the caller.
+        """
         now = time.monotonic()
         hit = self._slow_cache.get(name)
         if hit and now - hit[0] < ttl:
@@ -211,7 +216,7 @@ class Probe:
         try:
             val = fn()
         except Exception:  # noqa: BLE001
-            val = _NAN
+            val = default
         self._slow_cache[name] = (now, val)
         return val
 
@@ -266,8 +271,8 @@ class Probe:
         m = self.read()
         v = self.vessel
         m["next_periapsis_altitude"] = self._slow("next_pe", 1.0, lambda: self._next_pe(v, m))
-        m["node_time_to"], m["node_remaining_dv"] = self._slow("node", 0.5, lambda: self._node(v))
-        m["target_distance"], m["target_speed"] = self._slow("target", 0.5, lambda: self._target(v))
+        m["node_time_to"], m["node_remaining_dv"] = self._slow("node", 0.5, lambda: self._node(v), (_NAN, _NAN))
+        m["target_distance"], m["target_speed"] = self._slow("target", 0.5, lambda: self._target(v), (_NAN, _NAN))
         m["part_count"] = self._slow("parts", 0.5, lambda: len(v.parts.all))
         m["electric_charge"] = self._slow("ec", 2.0, lambda: self._ec(v))
         prop = self._slow("stage_prop", 1.0, lambda: self.stage_propellant_kg(v, int(m["stage"]), self.density))
