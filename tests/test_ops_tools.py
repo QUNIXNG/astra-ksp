@@ -16,7 +16,6 @@ import math
 import os
 import sys
 import types
-from pathlib import Path
 
 import pytest
 

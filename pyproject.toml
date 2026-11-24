@@ -6,13 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "astra-ksp"
 version = "2.0.0"
 description = "Mission control for Kerbal Space Program 1: an AI flies the whole mission live through tools — it designs, builds, launches and pilots the rocket, computing every decision from telemetry."
-readme = "README.md"
+readme = "README.en.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "shoal-rat" }]
 dependencies = [
   "krpc==0.5.4",
-  "mcp>=2.2",
+  "mcp>=2.2,<3",
   "pydantic>=2",
   "pillow>=10",
 ]
@@ -20,7 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 agent = ["claude-agent-sdk>=0.2.150"]
 media = ["imageio-ffmpeg>=0.5"]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.17"]
 
 [project.scripts]
 astra = "astra.cli:main"
@@ -34,3 +34,12 @@ astra = ["py.typed"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# Pyflakes-class rules only: unused imports and variables, undefined names, syntax errors. The repo
+# has never been linted, so a wider selection is its own refactor rather than a CI gate.
+select = ["E4", "E7", "E9", "F"]

@@ -609,8 +609,8 @@ def word_captions(text: str, words: list[list], limit: int = CAPTION_LIMIT, dura
         t0 = [a * per_char for a, _ in spans]
         t1 = [b * per_char for _, b in spans]
     else:
-        f, l = timed[0], timed[-1]
-        per_char = (t1[l] - t0[f]) / max(spans[l][1] - spans[f][0], 1)
+        first, last = timed[0], timed[-1]
+        per_char = (t1[last] - t0[first]) / max(spans[last][1] - spans[first][0], 1)
         for k in range(n):
             if k in timed:
                 continue

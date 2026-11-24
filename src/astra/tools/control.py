@@ -847,12 +847,12 @@ def target_set(
     body_name = next((b for b in bodies if b.casefold() == name.strip().casefold()), None)
     if body_name is not None and port is None:
         sc.target_body = bodies[body_name]
-        kind, label = "body", body_name
+        label = body_name
     else:
         tv = resolve_vessel(name, exclude=v)
         if port is None:
             sc.target_vessel = tv
-            kind, label = "vessel", tv.name
+            label = tv.name
         else:
             docking = tv.parts.docking_ports
             if not docking:
@@ -864,7 +864,7 @@ def target_set(
                 raise AstraError(f"part idx {idx} ({p.name}) on {tv.name} is not a docking port",
                                  "target_info lists target_docking_ports with idx")
             sc.target_docking_port = match
-            kind, label = "docking_port", f"{p.name} (idx {idx}) on {tv.name}"
+            label = f"{p.name} (idx {idx}) on {tv.name}"
     obj, got = current_target(sc)
     if obj is None:
         raise AstraError("KSP did not accept the target", "a vessel cannot target itself; try again")

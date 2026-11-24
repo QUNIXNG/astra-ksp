@@ -1,7 +1,5 @@
 """Offline tests for launcher helpers (no game, no files outside tmp_path)."""
 
-from pathlib import Path
-
 import pytest
 
 from astra import launcher

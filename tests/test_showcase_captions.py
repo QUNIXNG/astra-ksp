@@ -123,7 +123,7 @@ def test_multi_token_boundaries_align():
 def test_breaks_prefer_sentence_ends_and_punctuation():
     chunks = mv.caption_chunks(NARRATIONS[0])
     assert chunks[0] == "This is Mars."
-    assert all(not c.split()[-1].lower() in ("the", "a", "an", "to", "of") for c in chunks)
+    assert all(c.split()[-1].lower() not in ("the", "a", "an", "to", "of") for c in chunks)
     for c in chunks:  # no chunk runs from the end of one sentence into the middle of the next
         inner = [w for w in c.split()[:-1] if w.endswith(".")]
         assert not inner or c.endswith("."), c

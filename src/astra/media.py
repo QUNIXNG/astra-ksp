@@ -287,7 +287,7 @@ class Director(threading.Thread):
             from astra.telemetry import vessel_box
 
             box = vessel_box(v, v.reference_frame)
-            size = max(h - l for l, h in zip(*box)) if box else 5.0
+            size = max(hi - lo for lo, hi in zip(*box)) if box else 5.0
             sizes[key] = min(80.0, max(1.0, size))  # frame a sane size whatever a part reports
         size = sizes[key]
         if vtype == "eva":

@@ -220,7 +220,9 @@ def test_signed_angle_is_handedness_safe():
 
 
 def test_find_zero_ignores_wraparounds():
-    fn = lambda t: orbits.wrap_pi(3.0 - t)  # jumps from -pi to +pi at t = 3 + pi
+    def fn(t):
+        return orbits.wrap_pi(3.0 - t)  # jumps from -pi to +pi at t = 3 + pi
+
     assert orbits.find_zero(fn, 0.0, 10.0, 50) == pytest.approx(3.0, abs=1e-3)
     assert orbits.find_zero(lambda t: t * t + 1, 0.0, 1.0, 10) is None
 
@@ -274,7 +276,9 @@ def test_lambert_retrograde_request_and_frame_invariance():
     assert vdot(vcross(r1, v_pro), normal) > 0 > vdot(vcross(r1, v_ret), normal)
     # Swapping two axes flips handedness. A normal rebuilt as cross(r, v) inside the swapped frame (as
     # evaluate_transfer does) gives the same physical transfer back; the swapped pseudo-vector would not.
-    sw = lambda p: (p[0], p[2], p[1])
+    def sw(p):
+        return (p[0], p[2], p[1])
+
     v_sw, _ = lambert.lambert(MU_KERBIN, sw(r1), sw(r2), 4000.0, normal=vcross(sw(r1), sw(v_ref)))
     assert vnorm(vsub(sw(v_sw), v_pro)) < 1e-6
     v_wrong, _ = lambert.lambert(MU_KERBIN, sw(r1), sw(r2), 4000.0, normal=sw(normal))
