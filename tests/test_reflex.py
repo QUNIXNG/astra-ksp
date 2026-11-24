@@ -5,9 +5,11 @@ import math
 import pytest
 
 from astra.errors import AstraError
+from astra.reflex import burn as burn_mod
 from astra.reflex import engine as engine_mod
 from astra.reflex import events as events_mod
 from astra.reflex import descent, laws, triggers, vec
+from astra.reflex import warp as warp_mod
 from astra.reflex.descent import DescentGuidance, DescentThrottle
 
 G = 9.81
@@ -629,3 +631,98 @@ def test_fly_descent_settles_on_sas_and_reports_it(rig, parts_lost_at_contact):
     else:
         assert rep["stopped_by"]["kind"] == "law" and rep["stopped_by"]["detail"].startswith("touchdown")
         assert "SAS holding the settled attitude after 4" in rep["control"]["attitude"], rep["control"]
+
+
+# ---------------------------------------------------------------------------------------------
+# Node burn throttle and the warp descent guard
+
+
+class _BurnNode:
+    """A maneuver node that answers with whatever remaining vector the test sets."""
+
+    def __init__(self, rem):
+        self.rem = rem
+
+    def remaining_burn_vector(self, frame):
+        return self.rem
+
+
+def _burn_ctx(node):
+    control = type("C", (), {"nodes": [node]})()
+    return type("X", (), {"vessel": type("V", (), {"control": control})(), "nrf": _Frame("nrf")})()
+
+
+def test_node_burn_throttle_holds_full_past_the_feather_then_tapers():
+    node = _BurnNode((100.0, 0.0, 0.0))
+    law = burn_mod.NodeBurnThrottle(0, 1.0, 2.0, 0.05, 0.5)
+    ctx = _burn_ctx(node)
+    m = {"ut": 100.0, "thrust": 20_000.0, "mass": 1000.0, "available_thrust": 20_000.0, "throttle": 0.0}
+    law.start(ctx, m)
+    assert law.update(ctx, m) == pytest.approx(1.0)  # 100 m/s left; the feather only starts at 40 m/s
+    m["ut"], m["throttle"] = 102.0, 1.0
+    node.rem = (20.0, 0.0, 0.0)
+    assert law.update(ctx, m) == pytest.approx(0.5)  # a_full = 20 m/s^2, so 20 / (20 * 2 s)
+    assert law.applied == pytest.approx(40.0)  # 20 m/s^2 for 2 s of game time
+    m["ut"] = 103.0
+    node.rem = (0.4, 0.0, 0.0)
+    assert law.update(ctx, m) == 0.0
+    assert "below tolerance" in law.done(ctx, m)
+
+
+def test_node_burn_throttle_stops_on_overshoot_and_on_a_wrong_way_burn():
+    node = _BurnNode((100.0, 0.0, 0.0))
+    law = burn_mod.NodeBurnThrottle(0, 1.0, 2.0, 0.05, 0.5)
+    ctx = _burn_ctx(node)
+    m = {"ut": 100.0, "thrust": 20_000.0, "mass": 1000.0, "available_thrust": 20_000.0, "throttle": 0.0}
+    law.start(ctx, m)
+    law.update(ctx, m)
+    node.rem = (-8.0, 0.0, 0.0)  # burned past the node: the remaining vector flipped
+    assert law.update(ctx, m) == 0.0
+    assert "overshoot" in law.done(ctx, m)
+
+    node = _BurnNode((100.0, 0.0, 0.0))
+    law = burn_mod.NodeBurnThrottle(0, 1.0, 2.0, 0.05, 0.5)
+    ctx = _burn_ctx(node)
+    m = {"ut": 100.0, "thrust": 20_000.0, "mass": 1000.0, "available_thrust": 20_000.0, "throttle": 1.0}
+    law.start(ctx, m)
+    law.update(ctx, m)  # records that the burn started
+    m["ut"], node.rem = 104.0, (120.0, 0.0, 0.0)  # the remaining Δv grew while thrusting
+    assert law.update(ctx, m) == 0.0
+    assert "wrong-way" in law.done(ctx, m)
+
+
+class _CrossingOrbit:
+    """Just enough of a Kepler orbit for descent_crossing_ut: the answers are fixed, not propagated."""
+
+    def __init__(self, periapsis, ta=0.5, ut=900.0, period=3600.0, raises=False):
+        self.periapsis, self.period = periapsis, period
+        self._ta, self._ut, self._raises = ta, ut, raises
+        self.asked: list[float] = []
+
+    def true_anomaly_at_radius(self, r):
+        if self._raises:
+            raise ValueError("this orbit never reaches that radius")
+        return self._ta
+
+    def ut_at_true_anomaly(self, ta):
+        self.asked.append(ta)
+        return self._ut
+
+
+def test_warp_descent_crossing_only_returns_a_future_crossing():
+    # never descends to the requested altitude
+    assert warp_mod.descent_crossing_ut(_CrossingOrbit(700_000.0), 600_000.0, 80_000.0, 1000.0) is None
+    # a crossing already behind us rolls to the next orbit
+    orbit = _CrossingOrbit(600_000.0, ut=900.0)
+    assert warp_mod.descent_crossing_ut(orbit, 600_000.0, 80_000.0, 1000.0) == pytest.approx(4500.0)
+    assert orbit.asked == [-0.5]  # the descending crossing sits before periapsis
+    # a crossing still ahead comes back as it is
+    assert warp_mod.descent_crossing_ut(_CrossingOrbit(600_000.0, ut=1400.0), 600_000.0, 80_000.0,
+                                        1000.0) == pytest.approx(1400.0)
+    # no answer beats a wrong one
+    assert warp_mod.descent_crossing_ut(_CrossingOrbit(600_000.0, raises=True), 600_000.0, 80_000.0,
+                                        1000.0) is None
+    assert warp_mod.descent_crossing_ut(_CrossingOrbit(600_000.0, ta=float("nan")), 600_000.0, 80_000.0,
+                                        1000.0) is None
+    assert warp_mod.descent_crossing_ut(_CrossingOrbit(600_000.0, period=float("nan")), 600_000.0, 80_000.0,
+                                        1000.0) is None
