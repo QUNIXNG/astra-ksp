@@ -101,6 +101,42 @@ def test_design_check_warnings():
     assert "side_pod hangs on tank beside side_dec" in text
 
 
+def lander(**changes):
+    parts = [
+        {"id": "pod", "part": "mk1pod.v2"},
+        {"id": "tank", "part": "fuelTank", "parent": "pod", "node": "bottom"},
+        {"id": "eng", "part": "liquidEngine2.v2", "parent": "tank", "node": "bottom"},
+        {"id": "legs", "part": "landingLeg1", "parent": "tank", "surface": {"azimuth_deg": 0, "height_m": -0.5},
+         "symmetry": 4},
+    ]
+    for p in parts:
+        p.update(changes.get(p["id"], {}))
+    return {"name": "Lander Test", "parts": parts + changes.get("extra", [])}
+
+
+def test_design_check_lander_geometry():
+    """The four touchdown checks: what happens after the engines stop."""
+    # Four legs on a narrow tank under a tall stack: the foot ring is short for its centre of mass.
+    text = "\n".join(registry.validate_and_call("design_check", {"spec": lander()})["warnings"])
+    assert "tip-over: 4 legs reach 0.92 m" in text and "22 deg" in text
+
+    # A heat shield under the pod: the hatch has nowhere to open.
+    shield = lander(tank={"parent": "shield"},
+                    extra=[{"id": "shield", "part": "HeatShield1", "parent": "pod", "node": "bottom"}])
+    text = "\n".join(registry.validate_and_call("design_check", {"spec": shield})["warnings"])
+    assert "shield (HeatShield1) sits directly under pod's hatch" in text
+
+    # A 2.5 m tank under a 1.25 m pod: the hatch opens onto a shelf.
+    text = "\n".join(registry.validate_and_call(
+        "design_check", {"spec": lander(tank={"part": "Rockomax16.BW"})})["warnings"])
+    assert "opens onto tank's top face (1.25 m across, against the pod's 0.62 m)" in text
+
+    # Legs mounted high up: the bell reaches the ground first.
+    text = "\n".join(registry.validate_and_call(
+        "design_check", {"spec": lander(legs={"surface": {"azimuth_deg": 0, "height_m": 0.9}})})["warnings"])
+    assert "reaches 0.71 m below the feet" in text and "bell meets the ground" in text
+
+
 def test_design_check_rejects_bad_specs():
     with pytest.raises(SpecError) as err:
         registry.validate_and_call("design_check", {"spec": rocket(eng={"node": "side"})})

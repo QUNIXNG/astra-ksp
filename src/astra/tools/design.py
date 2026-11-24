@@ -16,7 +16,7 @@ from astra.config import CONFIG
 from astra.craft import stagesim
 from astra.craft.catalog import PROPELLANT_FAMILIES, ROLES, get_catalog
 from astra.craft.confignode import ConfigNode, read_text
-from astra.craft.geometry import Placement, place, surface_radius
+from astra.craft.geometry import Placement, local_extent_y, place, surface_radius
 from astra.craft.spec import parse_spec
 from astra.craft.staging import assign_stages
 from astra.craft.writer import describe_placement, spec_from_craft, write_craft
@@ -289,6 +289,7 @@ def _warnings(placement: Placement, results: list[stagesim.StageResult], rows: l
                      "they feed nothing: set \"crossfeed\": true on the decoupler")
     out.extend(_steering_warnings(placement, results))
     out.extend(_power_warnings(placement))
+    out.extend(_lander_warnings(placement))
     for r in rows:
         if "warning" in r:
             out.append(f"stage {r['stage']}: {r['warning']}")
@@ -299,6 +300,62 @@ def _warnings(placement: Placement, results: list[stagesim.StageResult], rows: l
     if ext["max_diameter_m"] > 0 and ext["height_m"] / ext["max_diameter_m"] > 15:
         out.append(f"info: slender stack (height/diameter {ext['height_m'] / ext['max_diameter_m']:.1f}); "
                    "watch for flex and aerodynamic instability")
+    return out
+
+
+def _lander_warnings(placement: Placement) -> list[str]:
+    """Touchdown geometry: the tip-over margin, the way out of the hatch, and legs that do not reach.
+
+    Everything that happens after the engines stop is decided by the legs: a narrow foot ring under a
+    tall centre of mass goes over on a gentle slope, an engine bell that ends below the feet takes the
+    touchdown instead of the legs, and a hatch that opens onto a tank top or a heat shield leaves the
+    crew nowhere to stand. The flown Mun landers failed on exactly these three, one after another.
+    """
+    out: list[str] = []
+    legs = [p for p in placement.parts if p.info.role == "landing_leg"]
+    if not legs:
+        return out
+    com = placement.com()
+    feet_y = min(p.world([0.0, local_extent_y(p.info)[0], 0.0])[1] for p in legs)
+    height = com[1] - feet_y
+    # A leg's bounding box is its stowed pose; deployed feet reach further, so this is a lower bound.
+    reach = max(math.hypot(p.pos[0] - com[0], p.pos[2] - com[2]) + p.info.radius_m for p in legs)
+    if height > 0.05 and reach > 0:
+        tip_deg = math.degrees(math.atan2(reach, height))
+        if tip_deg < 25.0:
+            out.append(f"tip-over: {len(legs)} legs reach {reach:.2f} m from the centre of mass but it sits "
+                       f"{height:.2f} m above their feet, so a slope steeper than {tip_deg:.0f} deg puts the craft "
+                       "over (measured on the stowed leg boxes: deployed feet reach further, so treat this as a "
+                       "lower bound). Sideways drift spends the whole margin on one leg, and a kerbal leaving the "
+                       "hatch adds a jolt of its own, so a landing site that is not dead flat wants more: widen "
+                       "the base, move mass down, or add legs")
+    engines = [p for p in placement.parts if p.info.engines]
+    if engines:
+        low_y, low_part = math.inf, None
+        for p in engines:
+            y = p.world([0.0, local_extent_y(p.info)[0], 0.0])[1]
+            if y < low_y:
+                low_y, low_part = y, p
+        if low_y < feet_y - 0.02:
+            out.append(f"touchdown: {low_part.spec.id} ({low_part.info.name}) reaches {feet_y - low_y:.2f} m below "
+                       "the feet, so its bell meets the ground before the legs do: the craft rests on the engine "
+                       "and can bounce or break a part loose. Extend the legs, or move the engines up")
+    for p in placement.parts:
+        if p.info.role != "command_pod" or (p.info.crew or 0) <= 0:
+            continue
+        for c in p.children:
+            if c.attach != "stack":
+                continue
+            if c.info.role == "heat_shield":
+                out.append(f"eva path: {c.spec.id} ({c.info.name}) sits directly under {p.spec.id}'s hatch: a heat "
+                           "shield there blocks EVA (spawnEVA returns null when no hatch is free), and a crewed "
+                           "lander that cannot get out cannot plant a flag. Move the shield to the far side of the "
+                           "pod, or seat the crew in a cabin whose hatch is clear")
+            elif c.info.radius_m > p.info.radius_m + 0.1:
+                out.append(f"eva path: {p.spec.id}'s hatch opens onto {c.spec.id}'s top face "
+                           f"({c.info.radius_m:.2f} m across, against the pod's {p.info.radius_m:.2f} m): the kerbal "
+                           "steps onto a shelf instead of the ground, and walking off it topples a light lander. "
+                           "Keep the hatch over a part no wider than the pod")
     return out
 
 
@@ -385,7 +442,9 @@ def design_check(
     Δv in vacuum and at the chosen pressure, burn time, thrust, Isp, and TWR at stage start/end on
     the body), totals, and warnings (diameter steps, empty radial decouplers, unreachable propellant,
     LF-only engines on LF/Ox tanks, drop tanks without crossfeed, separators sharing a stage, thrust
-    limiters, no control source, launch TWR < 1). Spec problems raise an error listing every issue.
+    limiters, no control source, launch TWR < 1, and on anything with landing legs the touchdown
+    geometry: tip-over margin, an engine bell hanging below the feet, and a hatch that opens onto a
+    shelf or onto a heat shield). Spec problems raise an error listing every issue.
     Stage numbers are KSP's inverse stages: the highest fires first, 0 last.
     """
     result = _analyse(spec, body, pressure_atm, crew)
