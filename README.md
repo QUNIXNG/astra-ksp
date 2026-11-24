@@ -1,63 +1,63 @@
 <div align="center">
 
-<img src="docs/media/banner.jpg" width="100%" alt="ASTRA, an AI flight crew for Kerbal Space Program">
+<img src="docs/media/banner.jpg" width="100%" alt="ASTRA，Kerbal Space Program 的 AI 飞行乘组">
 
-English | [简体中文](README.zh-CN.md)
+[English](README.en.md) | 简体中文
 
-### Give Claude a running game of Kerbal Space Program, and it flies the mission itself.
+### 把正在运行的 Kerbal Space Program 交给 Claude，让它自己飞完整个任务。
 
-74 MCP tools, one loop: observe → compute → decide → act → verify. The game pauses while the AI thinks.
+74 个 MCP 工具，一个循环：观察 → 计算 → 决策 → 行动 → 验证。AI 思考时，游戏暂停。
 
 [![KSP1](https://img.shields.io/badge/Kerbal%20Space%20Program-1.12.5-blue)](https://www.kerbalspaceprogram.com/)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![MCP](https://img.shields.io/badge/interface-MCP-6f42c1)](https://modelcontextprotocol.io/)
-[![kRPC](https://img.shields.io/badge/telemetry-kRPC%200.5.4-1f8fff)](https://krpc.github.io/krpc/)
+[![MCP](https://img.shields.io/badge/接口-MCP-6f42c1)](https://modelcontextprotocol.io/)
+[![kRPC](https://img.shields.io/badge/遥测-kRPC%200.5.4-1f8fff)](https://krpc.github.io/krpc/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[Install](#install) · [Fly](#fly) · [How it works](#how-it-works) · [Safety](#safety-and-side-effects) · [Tools](docs/TOOLS.md) · [Flights](docs/missions/)
+[安装](#安装) · [飞行](#飞行) · [工作原理](#工作原理) · [安全](#安全与副作用) · [工具](docs/TOOLS.md) · [飞行记录](docs/missions/)
 
 </div>
 
-ASTRA turns KSP 1 into 74 MCP tools: instruments, calculators, direct controls and short control
-reflexes. Claude uses them as astronaut and mission control — it reads the live part catalog,
-designs a rocket, launches it, plans and executes the transfer, lands, sends a kerbal out to plant
-a flag, and flies home.
+ASTRA 把 KSP 1 变成 74 个 MCP 工具：仪器、计算器、直接控制和短视界反射动作。Claude
+既是宇航员也是地面飞控——读实时部件库、设计火箭、发射、规划并执行转移、着陆，送
+Kerbal 出舱插旗，再飞回家。
 
-Every number is computed from live telemetry. There are no mission scripts: the AI chooses target
-altitudes, burn times, staging, landing sites and margins one decision at a time.
+每个数字都由实时遥测计算。仓库里没有任何任务脚本：目标高度、燃烧时刻、俯仰程序、
+分级、着陆点和裕度都由 AI 当场决定。
 
-[Watch the flight reel](https://github.com/shoal-rat/astra-ksp/releases/tag/v2.0.0) · [Tool reference](docs/TOOLS.md) · [Architecture](docs/ARCHITECTURE.md)
+[观看飞行录像](https://github.com/shoal-rat/astra-ksp/releases/tag/v2.0.0) ·
+[工具手册](docs/TOOLS.md) · [架构](docs/ARCHITECTURE.md)
 
-## What it does
+## 它能做什么
 
-- **Design.** Search the loaded part catalog, inspect parts, and build a `.craft` file.
-  `design_check` reports per-stage Δv, TWR, steering authority and electric power.
-- **Fly.** Use MechJeb for ascent and planning, or fly a climb the AI wrote itself with
-  `fly_until`; create maneuver nodes, execute burns and change targets.
-- **Land.** `fly_descent` predicts a suicide burn by numerical integration, checks the terrain
-  ahead, cancels horizontal drift, hovers, and leaves SAS holding the settled lander.
-- **Explore.** Control rosters and seats, EVA, jetpack hops, walking, flags and return to the
-  capsule through a Harmony patch on the stock EVA controls.
-- **Verify and record.** Burns report the Δv actually applied; launches report who is aboard;
-  every tool call is written to `log.jsonl`, with decisions in `journal.md` and on an in-game
-  CAPCOM panel (F8).
+- **设计火箭**：搜索当前安装的部件、读取详细参数并生成 `.craft`；`design_check`
+  计算各级 Δv、推重比，并检查操纵力矩和电力。
+- **飞行**：用 MechJeb 执行上升与规划，或用 AI 自行编写的程序通过 `fly_until`
+  飞行；创建节点、执行燃烧和切换目标。
+- **动力着陆**：`fly_descent` 数值积分预测自杀燃烧，检查前方地形，消除横向漂移，
+  末段悬停后触地，并留下 SAS 保持姿态。
+- **出舱探索**：管理乘组与座位，控制喷气背包跳跃、行走、插旗和返回座舱；通过
+  Harmony 补丁驱动原版 EVA。
+- **验证与留痕**：燃烧回报实际 Δv，发射回报实际乘员；每次调用写入 `log.jsonl`，
+  决策进入 `journal.md` 和游戏内 CAPCOM 面板（F8）。
 
-Published evidence: 473 calls across 8 flight logs, 5 completed and 3 deliberately aborted. The
-first AI-designed crewed rocket reached an 80.3 × 79.6 km Kerbin orbit; the Duna lander touched
-down at 1.22 m/s, 0.01 m/s sideways, 377 Kerbin days after launch. See [the flight logs](docs/missions/)
-and [lessons](knowledge/lessons.md).
+公开证据：8 份飞行日志、473 次工具调用，5 次完成、3 次主动中止。第一枚 AI 设计的
+载人火箭进入 80.3 × 79.6 km 坎星轨道；Duna 着陆器以 1.22 m/s 触地，横向速度
+0.01 m/s，距发射 377 个 Kerbin 天。详见[飞行日志](docs/missions/)与
+[经验教训](knowledge/lessons.md)。
 
-## Install
+## 安装
 
-Requires:
+需要：
 
-- Windows and **Kerbal Space Program 1.12.5**
-- **kRPC 0.5.4**, **MechJeb2**, **ModuleManager**, and **Harmony** (`GameData/000_Harmony`)
+- Windows 和 **Kerbal Space Program 1.12.5**
+- **kRPC 0.5.4**、**MechJeb2**、**ModuleManager**、**Harmony**
+  （`GameData/000_Harmony`）
 - Python 3.11+
-- Claude Code, signed in. Autonomous missions reuse the local login; no API key is needed.
+- 已登录的 Claude Code；自主任务复用本机登录，不需要 API Key。
 
-ASTRA finds KSP through Steam's `libraryfolders.vdf` and a running `KSP_x64.exe`. Set
-`ASTRA_KSP_DIR` to override discovery.
+ASTRA 从 Steam 的 `libraryfolders.vdf` 和运行中的 `KSP_x64.exe` 查找游戏。手动指定
+位置时设置 `ASTRA_KSP_DIR`。
 
 ```bash
 git clone https://github.com/QUNIXNG/astra-ksp.git
@@ -66,139 +66,132 @@ python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[agent,media,dev]"
 ```
 
-Close KSP, then build and install the bridge plugin. This compiles against your KSP install with
-the in-box .NET Framework compiler (`csc.exe`) and writes into `GameData/KspAutomationBridge/`:
+关闭 KSP，然后编译并安装桥接插件。它使用本机 .NET Framework 的 `csc.exe`，针对你的
+KSP 安装编译，并写入 `GameData/KspAutomationBridge/`：
 
 ```bash
 .venv/Scripts/astra.exe bridge install
 ```
 
-The bridge writes a bearer token to
-`GameData/KspAutomationBridge/PluginData/bridge.cfg` on first start. The Python client reads it
-automatically. Other local clients must send `Authorization: Bearer <token>`.
+桥接插件首次启动时把 bearer 令牌写入
+`GameData/KspAutomationBridge/PluginData/bridge.cfg`。Python 客户端自动读取；其他本机
+工具必须发送 `Authorization: Bearer <token>`。
 
-Optionally create a clean save and start the game. `newsave` copies settings and the roster from
-an existing save (`--from` names its folder); on a Chinese KSP install the stock folder may be
-`默认` rather than `default`.
+可选：创建干净存档并启动游戏。`newsave` 从已有存档复制设置和宇航员名单，`--from`
+填写存档文件夹名；中文版游戏的原版存档可能叫 `默认` 而不是 `default`。
 
 ```bash
 .venv/Scripts/astra.exe newsave astra --from default
 .venv/Scripts/astra.exe up --save astra
 ```
 
-## Fly
+## 飞行
 
-There are three ways to use the same tool set.
+同一套工具有三种用法。
 
-- **Claude Code (human flight director).** Open Claude Code in this folder. `.mcp.json` starts the
-  ASTRA MCP server and `CLAUDE.md` makes the session the flight crew. For example:
-  *"Land a kerbal on the Mun, plant a flag, and bring them home."*
-- **Autonomous mission.** A Claude Agent SDK crew flies the goal with ASTRA tools only, plus the
-  `booster-engineer` and `fido` subagents. It has no shell or file access, so it cannot script the
-  flight. Logs and transcripts go to `missions/<timestamp>-<goal>/`.
+- **Claude Code（你担任飞行指挥）**：在本目录打开 Claude Code。`.mcp.json` 启动
+  ASTRA MCP 服务，`CLAUDE.md` 定义飞行乘组。例如：
+  *“送一个 Kerbal 上 Mun，插旗，然后带他回家。”*
+- **自主任务**：Claude Agent SDK 乘组只用 ASTRA 工具完成目标，另有
+  `booster-engineer` 和 `fido` 子代理；没有 shell 和文件访问，不能写飞行脚本。
+  日志与对话记录保存到 `missions/<时间戳>-<目标>/`。
 
   ```bash
   .venv/Scripts/astra.exe mission "land on the Mun and return"
   ```
 
-- **Manual calls.** Keep control state between calls with the daemon:
+- **手动调用**：用守护进程在多次调用之间保持控制状态：
 
   ```bash
   .venv/Scripts/astra.exe serve --http
   .venv/Scripts/astra.exe call telemetry detail=brief
   ```
 
-`astra tools -v` prints every tool. [`docs/TOOLS.md`](docs/TOOLS.md) is the same reference;
-[`AGENTS.md`](AGENTS.md) shows how to register the server in other MCP clients.
+`astra tools -v` 列出所有工具。[`docs/TOOLS.md`](docs/TOOLS.md) 提供同样的参数说明；
+[`AGENTS.md`](AGENTS.md) 演示如何在其他 MCP 客户端注册服务。
 
-## How it works
+## 工作原理
 
-A language model needs seconds to answer; a rocket in the atmosphere does not wait. ASTRA pauses
-the game whenever a tool returns, without opening KSP's ESC menu. Telemetry, node edits and control
-changes still work while paused. Game time advances only during reflexes (`fly_*`), MechJeb calls
-with `watch`, crew actions, staging, checkpoints and vessel switches.
+语言模型回答需要几秒，大气中的火箭不会等待。ASTRA 在每次工具返回时暂停游戏，但不打开
+KSP 的 ESC 菜单；暂停时仍能读取遥测、编辑节点和修改控制。只有反射动作（`fly_*`）、带
+`watch` 的 MechJeb 调用、宇航员动作、分级、检查点和飞船切换会推进游戏时间。
 
-A **reflex** is a roughly 20 Hz control loop on kRPC streams. The AI supplies its stopping
-condition — a metric such as `surface_altitude <= 6000` or an event such as `landed` — and the
-reflex executes until that condition fires, an interlock trips, or a time bound expires. Interlocks
-cover flameout, part loss, SOI change, overheating, impact risk, loss of control and low power.
-They stop the reflex and return control; they never fly the vehicle themselves.
+**反射动作**是基于 kRPC 数据流、约 20 Hz 的控制循环。AI 指定停止条件，例如
+`surface_altitude <= 6000`，或 `landed` 事件；动作执行到条件满足、联锁触发或时间
+上限。联锁包括熄火、部件丢失、SOI 变化、过热、撞击风险、失控和低电量。它只停止动作并
+交还控制权，不会替 AI 飞行。
 
-Tools are instruments, calculators, controls or reflexes. None flies a whole mission, and no
-parameter default may encode a mission decision. The design rules live in
-[`knowledge/doctrine.md`](knowledge/doctrine.md); the playbooks teach how to derive numbers, not
-which numbers to enter.
+工具只有仪器、计算器、控制和反射动作四类，没有任何工具能执行整个任务，参数默认值也
+不能暗含任务决策。设计规则见 [`knowledge/doctrine.md`](knowledge/doctrine.md)；
+playbook 教如何推导数字，而不是直接给出数字。
 
 ```text
-Claude (Claude Code or astra mission)
-  │  MCP · 74 tools · pause on every tool return
+Claude（Claude Code 或 astra mission）
+  │  MCP · 74 个工具 · 每次工具返回即暂停
   ▼
-astra (Python) — tools · reflex engine (~20 Hz) · physics · craft writer · journal · recorder
-  │ kRPC 0.5.4: telemetry, control, nodes, warp
-  │ KspAutomationBridge 2.1.0: part database, EVA, MechJeb, pause, CAPCOM, recorder
+astra（Python）— 工具 · 约 20 Hz 反射引擎 · 物理计算 · craft 写入 · 日志 · 录像
+  │ kRPC 0.5.4：遥测、控制、节点、时间扭曲
+  │ KspAutomationBridge 2.1.0：部件库、EVA、MechJeb、暂停、CAPCOM、录像
   ▼
 KSP 1.12.5 + MechJeb2 + ModuleManager + Harmony
 ```
 
-## Safety and side effects
+## 安全与副作用
 
-- The bridge listens only on `127.0.0.1:48500`. It requires the bearer token described above, but
-  the token is not an OS sandbox: software running as the same user can read `bridge.cfg`. Do not
-  expose the port or publish the token.
-- Loading a save writes it back as `persistent.sfs` before the scene starts, matching KSP's stock
-  load dialog. `game_load_save` reports `persistent_save_overwritten: true`. Switching vessels and
-  leaving flight can also write the persistent save.
-- `game_launch` refuses an occupied launch site unless called with `recover_site=true`; the old
-  craft is then recovered explicitly, not silently.
-- Use a dedicated save for unattended experiments. Checkpoints are helpful, but a bad restore can
-  still discard progress made after it.
-- The bridge controls the game through KSP internals (kRPC, Harmony, MechJeb). Keep backups of
-  anything you cannot afford to lose.
+- 桥接插件仅监听 `127.0.0.1:48500`，要求上述 bearer 令牌；但这不是操作系统沙箱，
+  同一用户运行的软件仍能读取 `bridge.cfg`。不要暴露端口或公开令牌。
+- 加载存档会在场景启动前把它写回 `persistent.sfs`，与 KSP 原版读档对话框一致。
+  `game_load_save` 返回 `persistent_save_overwritten: true`；切换飞船和离开飞行场景
+  也可能写入持久存档。
+- 发射台已有飞船时，`game_launch` 默认拒绝；只有明确传入 `recover_site=true`
+  才会回收旧飞船。
+- 无人值守实验请使用专用存档。检查点可以帮助回滚，但错误的恢复仍可能丢失之后的进度。
+- 桥接插件通过 KSP 内部接口（kRPC、Harmony、MechJeb）控制游戏；任何不能丢失的存档都应
+  另行备份。
 
-## Filming
+## 录像
 
-The bridge reads frames back off-screen and pipes H.264 to ffmpeg. Each recording directory holds
-`video.mkv`, `frames.csv` and `marks.csv`; the AI's paused deliberation is never filmed. The
-`media` extra installs ffmpeg, or an existing `ffmpeg` on `PATH` can be used.
+桥接插件从屏幕外读取画面并交给 ffmpeg 编码 H.264。每个录像目录包含 `video.mkv`、
+`frames.csv` 和 `marks.csv`；AI 暂停思考的期间不会录像。安装 `media` 可选依赖即可
+带上 ffmpeg，也可以使用 `PATH` 中已有的 ffmpeg。
 
 ```bash
 .venv/Scripts/astra.exe record --dir recordings/my-flight
 .venv/Scripts/astra.exe mission "land on the Mun and return" --record
 ```
 
-## Repository layout
+## 仓库结构
 
-| Path | Contents |
+| 路径 | 内容 |
 |---|---|
-| `src/astra/` | MCP server, tools, kRPC/bridge clients, physics, craft writer, reflex engine, agent runner |
-| `csharp/KspAutomationBridge/` | KSP plugin: part database, EVA, MechJeb, scene/pause control, CAPCOM, screenshots, recorder |
-| `knowledge/` | doctrine, playbooks and accumulated flight lessons |
-| `docs/` | architecture, bridge API, generated tool reference, mission logs and media |
-| `tests/` | offline tests, including a closed-loop landing simulator |
+| `src/astra/` | MCP 服务、工具、kRPC/桥接客户端、物理计算、craft 写入、反射引擎、代理运行器 |
+| `csharp/KspAutomationBridge/` | KSP 插件：部件库、EVA、MechJeb、场景/暂停控制、CAPCOM、截图与录像 |
+| `knowledge/` | 行动准则、playbook 和飞行经验教训 |
+| `docs/` | 架构、桥接 API、生成的工具手册、任务日志与媒体 |
+| `tests/` | 离线测试，含闭环着陆模拟器 |
 
-## Development
+## 开发
 
 ```bash
 .venv/Scripts/python.exe -m pytest -q tests csharp/KspAutomationBridge/Tests
 ```
 
-Tests never launch, load, save, warp or modify the game. Read
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) before adding a tool. In short: tools are synchronous
-functions registered with `@tool("<group>")`, every parameter is described for the AI, results use
-SI units, expected failures raise `AstraError(message, hint)`, and defaults must not encode mission
-decisions. [`docs/BRIDGE_API.md`](docs/BRIDGE_API.md) documents every bridge endpoint; regenerate
-the tool reference with `astra tools --markdown`.
+测试不会启动、读档、写档、扭曲时间或修改游戏。添加工具前阅读
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)：工具是用 `@tool("<group>")` 注册的
+同步函数；每个参数都要向 AI 描述；结果使用 SI 单位；预期失败抛出
+`AstraError(message, hint)`；默认值不能编码任务决策。桥接端点见
+[`docs/BRIDGE_API.md`](docs/BRIDGE_API.md)；工具手册用 `astra tools --markdown` 重新生成。
 
-## Credits
+## 致谢
 
-Built on [Kerbal Space Program](https://www.kerbalspaceprogram.com/),
-[kRPC](https://krpc.github.io/krpc/), **MechJeb2**, **ModuleManager**, **Harmony**, the
-[Model Context Protocol](https://modelcontextprotocol.io/) Python SDK, pydantic, Pillow,
-**Claude Code**, the **Claude Agent SDK**, and **imageio-ffmpeg**.
+基于 [Kerbal Space Program](https://www.kerbalspaceprogram.com/)、
+[kRPC](https://krpc.github.io/krpc/)、**MechJeb2**、**ModuleManager**、**Harmony**、
+[Model Context Protocol](https://modelcontextprotocol.io/) Python SDK、pydantic、
+Pillow、**Claude Code**、**Claude Agent SDK** 和 **imageio-ffmpeg** 构建。
 
-This is a fork of [shoal-rat/astra-ksp](https://github.com/shoal-rat/astra-ksp). The upstream
-project and its flight logs remain the source for the original design and evidence.
+本项目是 [shoal-rat/astra-ksp](https://github.com/shoal-rat/astra-ksp) 的 fork。
+上游仓库及飞行日志仍是原始设计与飞行证据的来源。
 
-## License
+## 许可证
 
-MIT. Copyright (c) 2026 Weike Zhang. See [LICENSE](LICENSE).
+MIT。Copyright (c) 2026 Weike Zhang。见 [LICENSE](LICENSE)。

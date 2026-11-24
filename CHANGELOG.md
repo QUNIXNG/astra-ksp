@@ -2,9 +2,19 @@
 
 ## Unreleased
 
-- **README rewrite:** the README is now in English, with a Chinese version in `README.zh-CN.md`.
-  It adds a hero banner, a loop diagram, a video thumbnail, and a call-by-call excerpt of the Duna
-  landing log. Every figure was re-checked against the flight logs. Two corrections: Duna took 377
+- **Landing gear is now checked before flight:** `design_check` reports the tip-over angle (the leg
+  foot ring against the centre-of-mass height, measured on the stowed leg boxes), an engine bell that
+  ends below the feet, and a hatch that opens onto a tank top or onto a heat shield. Those are the
+  three ways the flown Mun landers went over after a landing the guidance had already made gentle.
+  Checked on `tests/fixtures/parts_subset.json` by `test_design_check_lander_geometry`.
+- **README default language is Chinese:** `README.md` is now the Chinese text and the English one
+  moved to `README.en.md`, so the GitHub front page opens in Chinese. The two files link to each
+  other, and `pyproject.toml` points the package metadata at `README.en.md`.
+- **Three showcase GIFs removed:** `mun_landing.gif`, `duna_landing.gif` and `launch.gif` (9.3 MB)
+  sat in `docs/media/` with nothing referencing them; the footage lives in the video.
+- **README rewrite:** the README adds a hero banner, a loop diagram, a video thumbnail, and a
+  call-by-call excerpt of the Duna landing log. Every figure was re-checked against the flight logs.
+  Two corrections: Duna took 377
   Kerbin days from launch to touchdown (329 was the planned transfer), and only the 0.86 and
   0.03 m/s Mun landings used the new predictor guidance. `scripts/showcase/readme_art.py` renders
   the artwork.
