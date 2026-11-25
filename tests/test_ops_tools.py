@@ -1612,6 +1612,30 @@ def test_mj_ascent_refuses_when_mechjeb_does_not_engage(k):
     assert "did not engage" in err.value.message and k.sc.active_vessel.control.current_stage == 0
 
 
+def test_mj_ascent_relaxes_the_flameout_interlock_when_mechjeb_autostages(k, monkeypatch):
+    # A spent stage still attached reads as a dry engine until MechJeb stages it away. Armed, that
+    # interlock ended the watch between stages and the paused game left the stager stuck, so the
+    # ascent interlock defaults to off whenever MechJeb is doing the staging.
+    pod = Part("mk1pod.v2", module_names={"ModuleCommand"})
+    eng = engine(Part("liquidEngine2.v2", parent=pod, stage=1), active=True, available=200e3)
+    fly_vessel(k, Vessel("Rocket", [pod, eng], situation=VesselSituation.orbiting, stage=1))
+    k.bridge.replies[("GET", "/mj-status")] = {"hasCore": True}
+    k.bridge.replies[("POST", "/mj-ascent")] = {"engaged": True, "effective": {}}
+    seen = {}
+
+    def fake_fly(**kw):
+        seen.update(kw)
+        return {"stopped_by": {"kind": "condition", "detail": "mechjeb_done"}, "game_s": 42.0}
+
+    monkeypatch.setitem(sys.modules, "astra.reflex.engine", types.SimpleNamespace(fly=fake_fly))
+    auto = {**ASCENT_AUTO, "autostage": True, "autostage_pre_delay_s": 0.5,
+            "autostage_post_delay_s": 0.5, "autostage_limit": 0, "watch": True, "max_game_s": 600.0}
+    call("mj_ascent", **auto)
+    assert seen["interlocks"]["flameout"] is False
+    call("mj_ascent", **auto, interlocks={"flameout": True})
+    assert seen["interlocks"]["flameout"] is True  # an explicit choice still wins
+
+
 def test_mj_execute_node_watch_stops_when_mechjeb_goes_idle(k, monkeypatch):
     v = fly_vessel(k, Vessel("Ship"))
     v.control.add_node(1600.0, prograde=50.0)

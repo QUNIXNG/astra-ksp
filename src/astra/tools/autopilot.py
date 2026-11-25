@@ -207,6 +207,11 @@ def mj_ascent(
     tool activates the next stage once after MechJeb is engaged, running a moment of game time for
     it (the `ignition` entry says what lit); MechJeb then commands the throttle. The result echoes
     the settings MechJeb accepted (`mechjeb.effective`), and the watch report if watching.
+
+    With `autostage` the flameout interlock defaults to off: MechJeb stages on burnout itself, so the
+    moment a spent stage is still attached and its engine reads dry is the gap it stages across, not
+    a failure. Armed, that interlock ends the watch between stages and the paused game stops MechJeb
+    from ever staging again. Pass `interlocks={"flameout": true}` to keep it.
     """
     _check_watch(watch, max_game_s)
     turn = {"turnStartAltitude": turn_start_altitude_m, "turnStartVelocity": turn_start_velocity_mps,
@@ -266,6 +271,12 @@ def mj_ascent(
                                        "control_stage (or control_part activate) to light the ascent engine")
     if autostage:
         out["reminder"] = "MechJeb's stager stays armed after the ascent: mj_abort(['staging']) before later burns"
+        # A spent stage still attached reads as a dry engine until MechJeb fires the next one: that
+        # gap is exactly what the stager exists to cross, so the flameout interlock must not cut the
+        # watch there. Left armed it froze a four-stage ascent on the pad-side of stage 5: the stage
+        # fired, the watch stopped on the now-dry engine, and the paused game never let MechJeb stage
+        # again. An explicit interlocks['flameout'] still wins.
+        interlocks = {**(interlocks or {}), "flameout": (interlocks or {}).get("flameout", False)}
     result = _finish(out, "ascent", watch, max_game_s, stop_when, interlocks, "mj_ascent")
     result["orbit"] = _safe(lambda: _orbit_brief(k.vessel()))
     return result
