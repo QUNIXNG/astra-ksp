@@ -109,6 +109,9 @@ def fly_burn(
     min_throttle: Annotated[float, Field(description="Throttle floor while feathering.", ge=0, le=1)] = 0.05,
     tolerance_mps: Annotated[float, Field(description="Cut off when the remaining Δv is below this.",
                                           gt=0)] = 0.1,
+    trim_mps: Annotated[float, Field(description=(
+        "If a stop_when trigger (or an early cutoff) leaves up to this much Δv on the node, finish it with one "
+        "feathered trim burn instead of stopping a few m/s short. 0 disables the trim."), ge=0)] = 3.0,
     auto_stage: Annotated[Any, _AUTOSTAGE] = False,
     stop_when: Annotated[list[dict[str, Any]] | None, Field(description=(
         "Optional extra stop triggers (same syntax as fly_until.until), e.g. stop an injection burn when "
@@ -133,8 +136,8 @@ def fly_burn(
     return _burn.execute_node(node_index=node_index, max_throttle=max_throttle, lead_fraction=lead_fraction,
                               align_deg=align_deg, max_late_s=max_late_s, align_margin_s=align_margin_s,
                               feather_s=feather_s, min_throttle=min_throttle, tolerance_mps=tolerance_mps,
-                              auto_stage=auto_stage, stop_when=stop_when, remove_node=remove_node,
-                              max_axis_offset_deg=max_axis_offset_deg)
+                              trim_mps=trim_mps, auto_stage=auto_stage, stop_when=stop_when,
+                              remove_node=remove_node, max_axis_offset_deg=max_axis_offset_deg)
 
 
 @tool("fly")

@@ -16,7 +16,7 @@ from pydantic import Field
 from astra.errors import AstraError, BridgeError, NotConnected
 from astra.ksp import ksp
 from astra.registry import tool
-from astra.tools.control import node_info, run_separation
+from astra.tools.control import node_info
 from astra.tools.game import reset_links
 from astra.tools.observe import (
     bridge_part_id, bridge_parts, bridge_vessel_id, enum_name, finite, resolve_part, resolve_vessel,
@@ -250,25 +250,32 @@ def mj_ascent(
     body.update(auto if auto_path else turn)
     if autostage:
         body.update(stage_args)
+    
+    # MechJeb cannot light the engines from the pad, and the bridge does it inside the same job as the engage.
+    engines_running = any(_safe(lambda e=e: e.active, False) for e in v.parts.engines)
+    needs_ignition = enum_name(v.situation) == "pre_launch" and not engines_running
+    body["ignite"] = needs_ignition
     reply = k.bridge.post("/mj-ascent", body, timeout=30.0)
     _require_engaged(reply, "ascent")
     out: dict[str, Any] = {"mechjeb": reply}
-    situation = enum_name(v.situation)
-    engines_on = any(_safe(lambda e=e: e.active, False) for e in v.parts.engines)
-    if situation == "pre_launch" and not engines_on:
-        stage_before = v.control.current_stage
-        _, game_s = run_separation(k, v.control.activate_next_stage, None)
+    if needs_ignition and reply.get("ignited"):
         reset_links()
         v = k.vessel()
-        out["ignition"] = {"staged": True, "stage_before": stage_before, "stage_after": v.control.current_stage,
+        out["ignition"] = {"staged": True, "stage_after": reply.get("stage"),
+                           "main_throttle": reply.get("mainThrottle"),
                            "engines_lit": [e.part.name for e in v.parts.engines if _safe(lambda e=e: e.active, False)],
-                           "game_s_elapsed": game_s,
                            "why": "MechJeb's ascent autopilot does not ignite from the pad"}
     else:
-        out["ignition"] = {"staged": False, "situation": situation, "engines_running": engines_on}
+        engines_on = any(_safe(lambda e=e: e.active, False) for e in v.parts.engines)
+        out["ignition"] = {"staged": False, "situation": enum_name(v.situation), "engines_running": engines_on}
         if not engines_on:
             out["ignition"]["note"] = ("no engine is running and MechJeb may not ignite one: "
                                        "control_stage (or control_part activate) to light the ascent engine")
+    site_lat = reply.get("site_latitude_deg")
+    if site_lat is not None:
+        out["launch_site"] = {"latitude_deg": site_lat, "requested_inclination_deg": inclination_deg,
+                              "cheapest_inclination_deg": abs(site_lat),
+                              "needs_dogleg": abs(inclination_deg) + 0.5 < abs(site_lat)}
     if autostage:
         out["reminder"] = "MechJeb's stager stays armed after the ascent: mj_abort(['staging']) before later burns"
         # A spent stage still attached reads as a dry engine until MechJeb fires the next one: that
@@ -279,6 +286,18 @@ def mj_ascent(
         interlocks = {**(interlocks or {}), "flameout": (interlocks or {}).get("flameout", False)}
     result = _finish(out, "ascent", watch, max_game_s, stop_when, interlocks, "mj_ascent")
     result["orbit"] = _safe(lambda: _orbit_brief(k.vessel()))
+    # The ascent is the one place where a wrong inclination costs a whole re-launch, and MechJeb will happily
+    # keep its own DesiredInclination if it was not applied. Report the orbit we actually got next to the ask.
+    orbit = result.get("orbit") or {}
+    actual_inc = orbit.get("inclination_deg")
+    if isinstance(actual_inc, (int, float)):
+        check = {"requested_deg": inclination_deg, "actual_deg": actual_inc,
+                 "ok": abs(abs(actual_inc) - abs(inclination_deg)) <= 1.0}
+        if not check["ok"]:
+            check["note"] = ("the orbit came out at a different inclination than requested: MechJeb kept its own "
+                             "DesiredInclination, or the ascent was released before the turn finished. Re-launch, "
+                             "or fix it with compute_maneuver kind='inclination' and fly_burn")
+        result["inclination_check"] = check
     return result
 
 

@@ -723,6 +723,7 @@ node_create; check the predicted result with orbit_info before burning.
 | `feather_s` | no | Start throttling down when the remaining Δv is less than this many seconds of full acceleration. |
 | `min_throttle` | no | Throttle floor while feathering. |
 | `tolerance_mps` | no | Cut off when the remaining Δv is below this. |
+| `trim_mps` | no | If a `stop_when` trigger (or an early cutoff) leaves up to this much Δv on the node, finish it with one feathered trim burn instead of stopping a few m/s short. 0 disables the trim. |
 | `auto_stage` | no | Stage automatically when an engine runs dry? false (default): the reflex stops on flameout and you decide. true or {"enabled": true, "max_stages": n, "min_interval_s": s}: stage on flameout, but only when the next stage lights an engine without dropping propellant, or drops only empty parts while another engine keeps burning; anything else stops the reflex for your decision. |
 | `stop_when` | no | Optional extra stop triggers (same syntax as fly_until.until), e.g. stop an injection burn when next_periapsis_altitude reaches your target even if the node says otherwise. |
 | `remove_node` | no | Delete the node after the burn. |
@@ -803,6 +804,10 @@ MechJeb does not ignite from the pad: if the vessel is pre-launch with no engine
 tool activates the next stage once after MechJeb is engaged, running a moment of game time for
 it (the `ignition` entry says what lit); MechJeb then commands the throttle. The result echoes
 the settings MechJeb accepted (`mechjeb.effective`), and the watch report if watching.
+
+Two guards sit next to the ascent: `launch_site` reports the pad latitude and whether the requested
+inclination is inside it (a dogleg costs dV), and `inclination_check` compares the orbit you ended up
+in against the one you asked for, because a mismatched inclination means a re-launch.
 
 | parameter | required | description |
 |---|---|---|

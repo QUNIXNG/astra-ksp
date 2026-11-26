@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using KSP.UI.Screens;
 using MechJebLib.FuelFlowSimulation;
 using MuMech;
 using JObj = System.Collections.Generic.Dictionary<string, object>;
@@ -329,6 +330,29 @@ namespace KspAutomationBridge
                 }
                 ap.Users.Add(core);
             }
+
+            // The station latitude bounds the cheapest inclination: anything inside it needs a dogleg, which
+            // the caller pays for in dV. Say so here rather than letting the ascent silently fly a wider turn.
+            double siteLatitude = vessel.latitude;
+            if (vessel.situation == Vessel.Situations.PRELAUNCH && Math.Abs(inclination) + 0.5 < Math.Abs(siteLatitude))
+            {
+                warnings.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "inclination {0:0.###} is inside the launch site latitude {1:0.###}: MechJeb has to fly a dogleg, "
+                    + "which costs extra dV. The cheapest inclination from this pad is {1:0.###}.",
+                    inclination, siteLatitude));
+            }
+
+            // MechJeb never lights the engines from the pad. Igniting inside this job keeps the first stage and
+            // the engage in one main-thread step, so the autopilot cannot see a pad with no thrust.
+            bool ignited = false;
+            if (req.Bool("ignite", false) && vessel.situation == Vessel.Situations.PRELAUNCH)
+            {
+                FlightInputHandler.state.mainThrottle = 1f;
+                vessel.ctrlState.mainThrottle = 1f;
+                StageManager.ActivateNextStage();
+                ignited = true;
+            }
+
             JObj d = new JObj();
             d["engaged"] = ap != null && ap.Enabled;
             d["applied"] = applied;
@@ -339,9 +363,17 @@ namespace KspAutomationBridge
                 d["warnings"] = warnings;
             }
             d["situation"] = vessel.situation.ToString();
-            if (engage && vessel.situation == Vessel.Situations.PRELAUNCH)
+            d["site_latitude_deg"] = Math.Round(siteLatitude, 4);
+            if (ignited)
             {
-                d["note"] = "MechJeb does not ignite from PRELAUNCH: set throttle and activate the first stage to start the ascent.";
+                d["ignited"] = true;
+                d["mainThrottle"] = FlightInputHandler.state.mainThrottle;
+                d["stage"] = vessel.currentStage;
+            }
+            else if (engage && vessel.situation == Vessel.Situations.PRELAUNCH)
+            {
+                d["note"] = "MechJeb does not ignite from PRELAUNCH: set throttle and activate the first stage to start "
+                    + "the ascent, or pass ignite=true.";
             }
             return d;
         }

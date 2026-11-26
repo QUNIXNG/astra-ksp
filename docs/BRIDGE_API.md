@@ -569,9 +569,14 @@ on enable). Optional (left as MechJeb has them when absent, and always echoed):
 | `hotStaging`, `dropSolids` | bool | HotStaging, DropSolids |
 | `hotStagingLeadTime`, `dropSolidsLeadTime` | s | HotStagingLeadTime, DropSolidsLeadTime |
 | `engage` | bool (default true) | false = configure only |
+| `ignite` | bool (default false) | true = set full throttle and fire the first stage inside the same main-thread job as the engage (MechJeb never lights the engines from the pad) |
 
-Returns `{engaged, applied, effective, status, situation, note?}`. `effective` also carries
+Returns `{engaged, applied, effective, status, situation, site_latitude_deg, ignited?, stage?, note?}`. `effective` also carries
 `autoTurnStartAltitude`, `autoTurnStartVelocity`, `autoTurnEndAltitude` (what autoPath computes).
+`site_latitude_deg` is the launch site latitude while the vessel sits on the pad; when
+`|inclination| < |site_latitude| - 0.5` a `warnings` entry says that MechJeb must fly a dogleg and what
+the cheapest inclination from that pad is. `ignited`/`stage` come back only when `ignite=true` fired the
+first stage; without it the reply carries the old `note` and the caller stages with kRPC instead.
 MechJeb does not ignite from PRELAUNCH: throttle up and stage once (kRPC) to start. Launch-to-plane
 countdowns (timed launch) are not exposed: compute the launch time and warp to it. With
 `autostage=true` the ascent autopilot claims MechJeb's staging controller and releases its claim

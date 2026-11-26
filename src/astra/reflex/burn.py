@@ -113,7 +113,7 @@ def burn_time_s(mass_kg: float, thrust_n: float, isp_s: float, dv: float) -> flo
 
 def execute_node(*, node_index: int, max_throttle: float, lead_fraction: float, align_deg: float,
                  max_late_s: float, align_margin_s: float, feather_s: float, min_throttle: float,
-                 tolerance_mps: float, auto_stage: Any, stop_when: list[dict] | None,
+                 tolerance_mps: float, trim_mps: float, auto_stage: Any, stop_when: list[dict] | None,
                  remove_node: bool, max_axis_offset_deg: float) -> dict:
     k = ksp()
     k.require_flight()
@@ -187,6 +187,24 @@ def execute_node(*, node_index: int, max_throttle: float, lead_fraction: float, 
     report["burn"] = burn
     report["applied_dv_mps"] = law.applied
     report["remaining_dv_mps"] = law.remaining
+
+    # A stop_when trigger (periapsis reached, flameout, ...) cuts the burn with a few m/s still on the node.
+    # Finish that leftover here while the node still exists: re-planning for three metres per second costs the
+    # caller a whole round trip, and the trim is feathered so it cannot overshoot by more than the tolerance.
+    done = law._done or ""
+    leftover = law.remaining
+    trimmed = (trim_mps > 0 and math.isfinite(leftover) and tolerance_mps < leftover <= trim_mps
+               and not done.startswith(("overshoot", "wrong-way", "node disappeared")))
+    if trimmed:
+        trim_law = NodeBurnThrottle(node_index, max_throttle, feather_s, min_throttle, tolerance_mps)
+        report["trim"] = fly(
+            throttle_law=trim_law,
+            attitude_law=NodeDirection(node_index, freeze_below_mps=max(tolerance_mps * 5, a_full * 0.5)),
+            until=None, auto_stage=auto_stage, exit_throttle="cut", label="trim", max_game_s=60,
+            interlocks={"soi_change": False})
+        report["applied_dv_mps"] += trim_law.applied
+        report["remaining_dv_mps"] = trim_law.remaining
+        report["trim_reason"] = f"{done} left {leftover:.2f} m/s on the node"
     v = k.vessel()
     nodes = v.control.nodes
     if remove_node and len(nodes) > node_index:

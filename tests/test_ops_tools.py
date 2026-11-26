@@ -1581,26 +1581,46 @@ def test_mj_ascent_auto_path_needs_its_own_settings(k):
 def test_mj_ascent_sends_every_setting_and_kicks_ignition(k):
     pod = Part("mk1pod.v2", module_names={"ModuleCommand"})
     eng = engine(Part("liquidEngine2.v2", parent=pod, stage=1), active=False, available=200e3)
-    v = fly_vessel(k, Vessel("Rocket", [pod, eng], situation=VesselSituation.pre_launch, stage=2))
-    staged_while = []
-    v.control.on_stage = lambda: staged_while.append(k.paused) or setattr(eng.engine, "active", True) or []
+    fly_vessel(k, Vessel("Rocket", [pod, eng], situation=VesselSituation.pre_launch, stage=2))
     k.bridge.replies[("GET", "/mj-status")] = {"hasCore": True}
-    k.bridge.replies[("POST", "/mj-ascent")] = lambda body: {"engaged": True, "effective": {}}
+    # The bridge now lights the first stage inside the same job as the engage, so the reply carries the result.
+    k.bridge.replies[("POST", "/mj-ascent")] = lambda body: {"engaged": True, "effective": {},
+                                                             "ignited": True, "stage": 1, "mainThrottle": 1.0}
     out = call("mj_ascent", **ASCENT_MANUAL)
     method, path, body = next(c for c in k.bridge.calls if c[1] == "/mj-ascent")
     assert body == {"ascentType": "classic", "altitude": 80000.0, "inclination": 0.0, "autoPath": False,
                     "autostage": False, "skipCircularization": False, "limitAoA": False, "turnStartAltitude": 500.0,
                     "turnStartVelocity": 60.0, "turnEndAltitude": 45000.0, "turnEndAngle": 0.0,
-                    "turnShapeExponent": 0.4}
-    assert out["ignition"]["staged"] is True and out["ignition"]["engines_lit"] == ["liquidEngine2.v2"]
-    assert staged_while == [False]  # the ignition kick runs with game time (staging blocks while paused)
-    assert v.control.current_stage == 1 and out["paused"] is True and "note" in out
+                    "turnShapeExponent": 0.4, "ignite": True}
+    assert out["ignition"]["staged"] is True and out["ignition"]["stage_after"] == 1
+    assert out["ignition"]["main_throttle"] == 1.0
+    assert out["paused"] is True and "note" in out
+    # The caller must not stage again: the bridge already did it.
+    assert not [c for c in k.bridge.calls if c[1] == "/stage"]
     k.bridge.calls.clear()
+    eng.engine.active = True  # an engine is already burning
     out = call("mj_ascent", **ASCENT_AUTO)
     assert out["ignition"]["staged"] is False  # an engine is already running
     body = next(c for c in k.bridge.calls if c[1] == "/mj-ascent")[2]
+    assert body["ignite"] is False
     assert "turnStartAltitude" not in body and body["autoPath"] is True
     assert body["autoTurnPercent"] == 0.05 and body["autoTurnSpeedFactor"] == 18.5
+
+
+def test_mj_ascent_reports_the_launch_site_and_flags_a_dogleg(k):
+    # Launching into an inclination inside the pad's latitude forces MechJeb to fly a dogleg; the bridge warns,
+    # the tool surfaces the numbers so the caller can decide instead of wondering where the extra dV went.
+    fly_vessel(k, Vessel("Rocket", situation=VesselSituation.pre_launch))
+    k.bridge.replies[("GET", "/mj-status")] = {"hasCore": True}
+    k.bridge.replies[("POST", "/mj-ascent")] = {"engaged": True, "effective": {}, "site_latitude_deg": -28.5}
+    out = call("mj_ascent", **{**ASCENT_MANUAL, "inclination_deg": 0.0})
+    assert out["launch_site"]["latitude_deg"] == -28.5
+    assert out["launch_site"]["cheapest_inclination_deg"] == 28.5
+    assert out["launch_site"]["needs_dogleg"] is True
+    # A pad on the equator (Kerbin's KSC sits at 0.097 deg) needs no dogleg for an equatorial launch.
+    k.bridge.replies[("POST", "/mj-ascent")] = {"engaged": True, "effective": {}, "site_latitude_deg": -0.0972}
+    out = call("mj_ascent", **{**ASCENT_MANUAL, "inclination_deg": 0.0})
+    assert out["launch_site"]["needs_dogleg"] is False
 
 
 def test_mj_ascent_refuses_when_mechjeb_does_not_engage(k):
