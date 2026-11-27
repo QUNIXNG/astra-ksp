@@ -14,6 +14,7 @@ csharp/build/
 .cache/
 .scratch/
 .scratch_lunar/
+.scratch_*.json
 recordings/
 ascent.log
 circ.log
