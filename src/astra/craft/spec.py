@@ -61,6 +61,7 @@ class SurfaceSpec:
     height_m: float = 0.0  # along the parent's +Y axis from its origin
     radius_m: float | None = None  # distance from the parent's axis; None = the parent's surface
     tilt_deg: float = 0.0  # elevation of the surface normal: 0 side wall, 90 top face, -90 bottom face
+    upright: bool = False  # keep the part's Y axis vertical (engines: nozzle points down)
 
 
 @dataclass
@@ -105,6 +106,8 @@ class PartSpec:
                 s["radius_m"] = self.surface.radius_m
             if self.surface.tilt_deg:
                 s["tilt_deg"] = self.surface.tilt_deg
+            if self.surface.upright:
+                s["upright"] = self.surface.upright
             d["surface"] = s
         if self.symmetry != 1:
             d["symmetry"] = self.symmetry
@@ -358,9 +361,9 @@ def _parse_surface(v: Any, label: str, issues: list[SpecIssue]) -> SurfaceSpec |
         issues.append(SpecIssue(label, "surface", "must be an object",
                                 "{\"azimuth_deg\": 0..360, \"height_m\": along the parent axis}"))
         return None
-    for key in sorted(set(v) - {"azimuth_deg", "height_m", "radius_m", "tilt_deg"}):
+    for key in sorted(set(v) - {"azimuth_deg", "height_m", "radius_m", "tilt_deg", "upright"}):
         issues.append(SpecIssue(label, f"surface.{key}", "unknown field",
-                                "allowed: azimuth_deg, height_m, radius_m, tilt_deg"))
+                                "allowed: azimuth_deg, height_m, radius_m, tilt_deg, upright"))
     s = SurfaceSpec()
     if v.get("azimuth_deg") is not None:
         s.azimuth_deg = _number(v["azimuth_deg"], label, "surface.azimuth_deg", issues)
@@ -370,6 +373,8 @@ def _parse_surface(v: Any, label: str, issues: list[SpecIssue]) -> SurfaceSpec |
         s.radius_m = _number(v["radius_m"], label, "surface.radius_m", issues, 0.0)
     if v.get("tilt_deg") is not None:
         s.tilt_deg = _number(v["tilt_deg"], label, "surface.tilt_deg", issues, -90.0, 90.0) or 0.0
+    if v.get("upright") is not None:
+        s.upright = bool(v["upright"])
     return s
 
 

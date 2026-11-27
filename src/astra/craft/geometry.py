@@ -418,6 +418,11 @@ def _surface_attach(parent: Placed, cs: PartSpec, info: PartInfo, k: int, placem
         if note not in placement.warnings:
             placement.warnings.append(note)
     local_rot = surface_rotation(info.srf_node, normal)
+    if s.upright:
+        # A radial engine whose stock surface node is vertical would be laid on its side by
+        # surface_rotation. Yaw only, so the part keeps its axis along the vessel's Y and the
+        # nozzle points down.
+        local_rot = q_yaw(math.radians(az))
     local_pos = v_sub(point, q_rot(local_rot, info.srf_node.pos))
     rot = q_normalize(q_mul(parent.rot, local_rot))
     return Placed(cs.id + _suffix(parent), cs, info, parent, "surface", parent.world(local_pos), rot,
