@@ -2,14 +2,21 @@
 
 ## Unreleased
 
+- **The bundled agent runner is gone; ASTRA talks MCP only:** `astra mission` used the Claude
+  Agent SDK to launch a Claude Code session as the crew. It is removed with `src/astra/agent/`,
+  its tests, the `agent` extra, `CLAUDE.md`, `.claude/` and `docs/missions/`. The driving session
+  is now whatever MCP client you point at `astra serve`, which chooses its own model — the 74
+  tools, the physics, the reflex engine and the interlocks are untouched. Mission bookkeeping moves
+  to the `mission_start`/`mission_end` tools, which were never Claude-specific (the Mun transfer
+  on 探月2号 used them). Clocks and gates stay where they were: `pytest tests` is 525 passed,
+  5 skipped.
 - **kRPC 0.8.0 (protocol v2):** the mod, the Python client and the pinned dependency move to 0.8.0
   together. Protocol v2 gives each client a single connection, so `rpc_port`/`stream_port` collapse
   into one `port` and `ASTRA_KRPC_STREAM_PORT` is gone; `krpc.current_game_scene` became
   `krpc.game_scene` (same `str(...).split(".")[-1]` mapping). Streams are unchanged in use:
   `add_stream(getattr, obj, name)` and reference-frame method streams (`v.position, ref`) both work.
   kRPC dropped `Vessel.switch_to`; vessel switching already went through the bridge, so nothing
-  else moved. Verified in flight on 探月2号 with `game_status`, `telemetry` and live streams;
-  `pytest tests` is 550 passed, 5 skipped.
+  else moved. Verified in flight on 探月2号 with `game_status`, `telemetry` and live streams.
 - **Landing gear is now checked before flight:** `design_check` reports the tip-over angle (the leg
   foot ring against the centre-of-mass height, measured on the stowed leg boxes), an engine bell that
   ends below the feet, and a hatch that opens onto a tank top or onto a heat shield. Those are the

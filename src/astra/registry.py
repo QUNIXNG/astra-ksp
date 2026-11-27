@@ -3,7 +3,7 @@
 A tool is a plain synchronous Python function with typed (``Annotated``) parameters and a docstring.
 Registering it here makes it available three ways, with the same schema and behavior:
 
-* over MCP (``astra serve``) to Claude Code, Claude Desktop, the Agent SDK runner, or any MCP client;
+* over MCP (``astra serve``) to any MCP client;
 * on the command line (``astra call <tool> key=value ...``) for humans and non-MCP agents;
 * in-process (``registry.invoke``) for tests.
 

@@ -14,7 +14,7 @@ English | [简体中文](README.md)
 [![kRPC](https://img.shields.io/badge/telemetry-kRPC%200.8.0-1f8fff)](https://krpc.github.io/krpc/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[Install](#install) · [Fly](#fly) · [How it works](#how-it-works) · [Safety](#safety-and-side-effects) · [Tools](docs/TOOLS.md) · [Flights](docs/missions/)
+[Install](#install) · [Fly](#fly) · [How it works](#how-it-works) · [Safety](#safety-and-side-effects) · [Tools](docs/TOOLS.md) · [Lessons](knowledge/lessons.md)
 
 </div>
 
@@ -44,8 +44,8 @@ altitudes, burn times, staging, landing sites and margins one decision at a time
 
 Published evidence: 473 calls across 8 flight logs, 5 completed and 3 deliberately aborted. The
 first AI-designed crewed rocket reached an 80.3 × 79.6 km Kerbin orbit; the Duna lander touched
-down at 1.22 m/s, 0.01 m/s sideways, 377 Kerbin days after launch. See [the flight logs](docs/missions/)
-and [lessons](knowledge/lessons.md).
+down at 1.22 m/s, 0.01 m/s sideways, 377 Kerbin days after launch. What went wrong along
+the way is in [lessons](knowledge/lessons.md).
 
 ## Install
 
@@ -54,8 +54,7 @@ Requires:
 - Windows and **Kerbal Space Program 1.12.5**
 - **kRPC 0.8.0**, **MechJeb2**, **ModuleManager**, and **Harmony** (`GameData/000_Harmony`)
 - Python 3.11+
-- An MCP-capable model client for conversational flying; `astra mission` brings its own
-  runner and needs no API key.
+- An MCP-capable model client (Claude Code, pi, or any other), which decides the model.
 
 ASTRA finds KSP through Steam's `libraryfolders.vdf` and a running `KSP_x64.exe`. Set
 `ASTRA_KSP_DIR` to override discovery.
@@ -89,21 +88,12 @@ an existing save (`--from` names its folder); on a Chinese KSP install the stock
 
 ## Fly
 
-There are three ways to use the same tool set.
+There are two ways to use the same tool set.
 
 - **MCP client (human flight director).** Open this folder in any MCP-capable client.
   `.mcp.json` starts the ASTRA MCP server and the bundled crew brief turns the session into
   the flight crew. For example:
   *"Land a kerbal on the Mun, plant a flag, and bring them home."*
-- **Autonomous mission.** The bundled runner launches a crew that flies the goal with ASTRA
-  tools only, plus the
-  `booster-engineer` and `fido` subagents. It has no shell or file access, so it cannot script the
-  flight. Logs and transcripts go to `missions/<timestamp>-<goal>/`.
-
-  ```bash
-  .venv/Scripts/astra.exe mission "land on the Mun and return"
-  ```
-
 - **Manual calls.** Keep control state between calls with the daemon:
 
   ```bash
@@ -133,7 +123,7 @@ parameter default may encode a mission decision. The design rules live in
 which numbers to enter.
 
 ```text
-Model (MCP client or astra mission)
+Model (MCP client)
   │  MCP · 74 tools · pause on every tool return
   ▼
 astra (Python) — tools · reflex engine (~20 Hz) · physics · craft writer · journal · recorder
@@ -166,7 +156,6 @@ The bridge reads frames back off-screen and pipes H.264 to ffmpeg. Each recordin
 
 ```bash
 .venv/Scripts/astra.exe record --dir recordings/my-flight
-.venv/Scripts/astra.exe mission "land on the Mun and return" --record
 ```
 
 ## Repository layout

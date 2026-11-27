@@ -1,4 +1,4 @@
-"""Command line: ``astra serve | tools | call | mission | up | newsave | record | bridge``."""
+"""Command line: ``astra serve | tools | call | up | newsave | record | bridge``."""
 
 from __future__ import annotations
 
@@ -160,13 +160,6 @@ def cmd_serve(ns: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_mission(ns: argparse.Namespace) -> int:
-    from astra.agent.runner import run_mission
-
-    return run_mission(ns.goal, model=ns.model, max_turns=ns.max_turns, effort=ns.effort,
-                       resume=ns.resume, max_budget_usd=ns.max_budget_usd, record=ns.record)
-
-
 def cmd_up(ns: argparse.Namespace) -> int:
     from astra.launcher import bring_up
 
@@ -259,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="astra", description="Mission control for Kerbal Space Program 1.")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    s = sub.add_parser("serve", help="run the MCP server (stdio for Claude Code; --http for a daemon)")
+    s = sub.add_parser("serve", help="run the MCP server (stdio for an MCP client; --http for a daemon)")
     s.add_argument("--http", action="store_true", help="serve streamable HTTP on 127.0.0.1 (daemon mode)")
     s.add_argument("--port", type=int, default=None, help="daemon port (default 48600)")
     s.set_defaults(func=cmd_serve)
@@ -276,17 +269,6 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--compact", action="store_true")
     s.add_argument("--local", action="store_true", help="run in this process even if a daemon is up")
     s.set_defaults(func=cmd_call)
-
-    s = sub.add_parser("mission", help="fly a mission autonomously with a Claude agent as the crew")
-    s.add_argument("goal", help="what to accomplish, in plain language")
-    s.add_argument("--model", default="claude-opus-5-5")
-    s.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"])
-    s.add_argument("--max-turns", type=int, default=600)
-    s.add_argument("--max-budget-usd", type=float, default=None)
-    s.add_argument("--resume", default=None, help="Agent SDK session id to continue")
-    s.add_argument("--record", nargs="?", const="", default=None, metavar="DIR",
-                   help="film the flight (default folder recordings/<timestamp>)")
-    s.set_defaults(func=cmd_mission)
 
     s = sub.add_parser("up", help="start KSP if needed and load a save")
     s.add_argument("--save", default=None, help="save folder (default: $ASTRA_SAVE or 'astra')")

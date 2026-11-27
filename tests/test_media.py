@@ -1,4 +1,4 @@
-"""Filming (astra.media, `astra record`, `astra mission --record`), tested offline with a fake bridge.
+"""Filming (astra.media, `astra record`), tested offline with a fake bridge.
 
 Nothing here talks to KSP: the bridge is a fake object, the marker file lives in a temp folder, and
 the camera director gets a fake kRPC module.
@@ -14,11 +14,8 @@ import types
 import pytest
 
 from astra import cli, media, registry
-from astra.agent import runner
 from astra.config import CONFIG
 from astra.errors import BridgeError, NotConnected
-
-GOAL = "Film a probe reaching orbit"
 
 
 class FakeBridge:
@@ -427,54 +424,3 @@ def test_record_stop_clears_the_marker(bridge, tmp_path, capsys):
 
 
 # ---------------------------------------------------------------------------------------------
-# astra mission --record
-
-
-@pytest.fixture
-def mission_env(tmp_path, monkeypatch):
-    old = CONFIG.missions_dir
-    object.__setattr__(CONFIG, "missions_dir", tmp_path / "missions")
-
-    async def fly(goal, options, first, max_turns, budget, console, transcript):
-        return 1, None
-
-    monkeypatch.setattr(runner, "game_reachable", lambda: (True, True))
-    monkeypatch.setattr(runner, "detach_from_parent_session", lambda: [])
-    monkeypatch.setattr(runner, "leave_game_paused", lambda: "game paused")
-    monkeypatch.setattr(runner, "_fly", fly)
-    yield
-    object.__setattr__(CONFIG, "missions_dir", old)
-
-
-def _filming(close):
-    class Filming:
-        def __init__(self, folder, **kw):
-            self.started: dict = {}
-
-        def __enter__(self):
-            self.started = {"mode": "jpeg", "width": 2, "height": 2, "warning": "no ffmpeg found"}
-            return self
-
-        def close(self):
-            return close()
-
-    return Filming
-
-
-def test_mission_files_the_transcript_even_if_stopping_the_recorder_is_interrupted(
-        mission_env, tmp_path, monkeypatch, capsys):
-    def interrupted():
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr(media, "Session", _filming(interrupted))
-    assert runner.run_mission(GOAL, record=str(tmp_path / "rec")) == 1
-    out = capsys.readouterr().out
-    assert "recording: no ffmpeg found" in out
-    assert "stop failed (interrupted" in out and "transcript:" in out
-
-
-def test_mission_prints_why_the_recorder_did_not_stop(mission_env, tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(media, "Session", _filming(lambda: {"error": "KSP bridge unreachable"}))
-    assert runner.run_mission(GOAL, record=str(tmp_path / "rec")) == 1
-    out = capsys.readouterr().out
-    assert "recording: stop failed (KSP bridge unreachable)" in out and "None frames" not in out

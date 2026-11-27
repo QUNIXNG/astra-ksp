@@ -29,8 +29,7 @@ ASTRA 换了条路：把正在运行的 KSP 变成 **74 个 MCP 工具**，交�
 它读真实遥测、搜当前安装的部件库、算 Δv、建节点、执行燃烧、着陆、出舱插旗，然后飞回家。
 
 仓库里**没有任何任务脚本**。目标高度、点火时刻、俯仰程序、分级时机、着陆点、安全裕度，
-全部由 AI 在现场算出来。这不是一段演示视频——8 次真实飞行、473 次工具调用的记录都在
-[`docs/missions/`](docs/missions/)。
+全部由 AI 在现场算出来。这不是一段演示视频：8 次真实飞行、473 次工具调用。
 
 ## 它能做什么
 
@@ -53,8 +52,8 @@ ASTRA 换了条路：把正在运行的 KSP 变成 **74 个 MCP 工具**，交�
 | 第一枚 AI 设计的载人火箭 | 进入 80.3 × 79.6 km 坎星轨道 |
 | Duna 着陆 | 以 1.22 m/s 触地，横向速度 0.01 m/s，距发射 377 个 Kerbin 天 |
 
-主动中止的 3 次也算在记录里——中止是设计内的选择，不是崩溃。详见
-[飞行日志](docs/missions/) 与 [经验教训](knowledge/lessons.md)。
+主动中止的 3 次也算在记录里——中止是设计内的选择，不是崩溃。踩过的坑与判断依据记在
+[经验教训](knowledge/lessons.md)。
 
 ## 试一下
 
@@ -65,7 +64,7 @@ ASTRA 换了条路：把正在运行的 KSP 变成 **74 个 MCP 工具**，交�
 - Windows 和 **Kerbal Space Program 1.12.5**
 - **kRPC 0.8.0**、**MechJeb2**、**ModuleManager**、**Harmony**（`GameData/000_Harmony`）
 - Python 3.11+
-- 一个支持 MCP 的模型客户端（对话式飞行用）；`astra mission` 自带运行器，不需要 API Key
+- 一个支持 MCP 的模型客户端（Claude Code、pi 或任何 MCP 客户端都行），模型由客户端决定
 
 ```bash
 git clone https://github.com/QUNIXNG/astra-ksp.git
@@ -95,19 +94,11 @@ Python 客户端会自动读取；其他本机工具得自己发 `Authorization:
 .venv/Scripts/astra.exe up --save astra
 ```
 
-**然后对它说一句话就行。** 三种用法，同一套工具：
+**然后对它说一句话就行。** 两种用法，同一套工具：
 
 - **MCP 客户端（你当飞行指挥）**：在任意支持 MCP 的客户端里打开本目录，`.mcp.json`
   会起 ASTRA MCP 服务，仓库自带的乘组说明会把它约束成飞行乘组。比如：*“送一个 Kerbal
   上 Mun，插旗，然后带他回家。”*
-- **自主任务**：内置运行器起一个只有 ASTRA 工具的乘组去完成目标，另有 `booster-engineer`
-  和 `fido` 子代理；没有 shell、没有文件访问，写不了飞行脚本。日志和对话存到
-  `missions/<时间戳>-<目标>/`。
-
-  ```bash
-  .venv/Scripts/astra.exe mission "land on the Mun and return"
-  ```
-
 - **手动调用**：用守护进程在多次调用之间保持控制状态。
 
   ```bash
@@ -136,7 +127,7 @@ Python 客户端会自动读取；其他本机工具得自己发 `Authorization:
 直接给它数字。
 
 ```text
-模型（MCP 客户端或 astra mission）
+模型（MCP 客户端）
   │  MCP · 74 个工具 · 每次工具返回即暂停
   ▼
 astra（Python）— 工具 · 约 20 Hz 反射引擎 · 物理计算 · craft 写入 · 日志 · 录像
@@ -166,7 +157,6 @@ KSP 1.12.5 + MechJeb2 + ModuleManager + Harmony
 
 ```bash
 .venv/Scripts/astra.exe record --dir recordings/my-flight
-.venv/Scripts/astra.exe mission "land on the Mun and return" --record
 ```
 
 ## 仓库结构
