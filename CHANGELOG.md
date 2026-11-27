@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **kRPC 0.8.0 (protocol v2):** the mod, the Python client and the pinned dependency move to 0.8.0
+  together. Protocol v2 gives each client a single connection, so `rpc_port`/`stream_port` collapse
+  into one `port` and `ASTRA_KRPC_STREAM_PORT` is gone; `krpc.current_game_scene` became
+  `krpc.game_scene` (same `str(...).split(".")[-1]` mapping). Streams are unchanged in use:
+  `add_stream(getattr, obj, name)` and reference-frame method streams (`v.position, ref`) both work.
+  kRPC dropped `Vessel.switch_to`; vessel switching already went through the bridge, so nothing
+  else moved. Verified in flight on 探月2号 with `game_status`, `telemetry` and live streams;
+  `pytest tests` is 550 passed, 5 skipped.
 - **Landing gear is now checked before flight:** `design_check` reports the tip-over angle (the leg
   foot ring against the centre-of-mass height, measured on the stowed leg boxes), an engine bell that
   ends below the feet, and a hatch that opens onto a tank top or onto a heat shield. Those are the
@@ -90,5 +98,5 @@ Logs, journals and transcripts are in `docs/missions/`.
 
 ### Requirements
 
-KSP 1.12.5, kRPC 0.5.4, MechJeb2, ModuleManager, Harmony, Python 3.11+. Optional extras: `agent`
+KSP 1.12.5, kRPC 0.8.0, MechJeb2, ModuleManager, Harmony, Python 3.11+. Optional extras: `agent`
 (Claude Agent SDK) and `media` (imageio-ffmpeg for recording).

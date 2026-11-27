@@ -11,7 +11,7 @@ English | [简体中文](README.md)
 [![KSP1](https://img.shields.io/badge/Kerbal%20Space%20Program-1.12.5-blue)](https://www.kerbalspaceprogram.com/)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MCP](https://img.shields.io/badge/interface-MCP-6f42c1)](https://modelcontextprotocol.io/)
-[![kRPC](https://img.shields.io/badge/telemetry-kRPC%200.5.4-1f8fff)](https://krpc.github.io/krpc/)
+[![kRPC](https://img.shields.io/badge/telemetry-kRPC%200.8.0-1f8fff)](https://krpc.github.io/krpc/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 [Install](#install) · [Fly](#fly) · [How it works](#how-it-works) · [Safety](#safety-and-side-effects) · [Tools](docs/TOOLS.md) · [Flights](docs/missions/)
@@ -52,7 +52,7 @@ and [lessons](knowledge/lessons.md).
 Requires:
 
 - Windows and **Kerbal Space Program 1.12.5**
-- **kRPC 0.5.4**, **MechJeb2**, **ModuleManager**, and **Harmony** (`GameData/000_Harmony`)
+- **kRPC 0.8.0**, **MechJeb2**, **ModuleManager**, and **Harmony** (`GameData/000_Harmony`)
 - Python 3.11+
 - Claude Code, signed in. Autonomous missions reuse the local login; no API key is needed.
 
@@ -134,7 +134,7 @@ Claude (Claude Code or astra mission)
   │  MCP · 74 tools · pause on every tool return
   ▼
 astra (Python) — tools · reflex engine (~20 Hz) · physics · craft writer · journal · recorder
-  │ kRPC 0.5.4: telemetry, control, nodes, warp
+  │ kRPC 0.8.0: telemetry, control, nodes, warp
   │ KspAutomationBridge 2.1.0: part database, EVA, MechJeb, pause, CAPCOM, recorder
   ▼
 KSP 1.12.5 + MechJeb2 + ModuleManager + Harmony

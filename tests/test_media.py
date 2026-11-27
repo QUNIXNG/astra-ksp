@@ -343,7 +343,7 @@ def test_director_moves_smoothly_through_a_slow_tick(bridge, monkeypatch):
     steps = [b - a for a, b in zip([0.0] + headings(), headings())]
     assert len(steps) >= 8 and max(steps) <= turn * 2.0 / rate + 1e-9  # no catch-up jump after the slow tick
     assert cam.reads["pitch"] == len(headings()) and cam.reads["distance"] == len(headings())  # one read a tick
-    assert connects[0]["stream_port"] is None
+    assert connects[0]["port"] == CONFIG.krpc_rpc_port  # one port per client since protocol v2
 
 
 # ---------------------------------------------------------------------------------------------

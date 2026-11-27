@@ -64,7 +64,6 @@ class Config:
     ksp_dir: Path = field(default_factory=_ksp_dir)
     krpc_host: str = field(default_factory=lambda: os.environ.get("ASTRA_KRPC_HOST", "127.0.0.1"))
     krpc_rpc_port: int = field(default_factory=lambda: int(os.environ.get("ASTRA_KRPC_RPC_PORT", "50000")))
-    krpc_stream_port: int = field(default_factory=lambda: int(os.environ.get("ASTRA_KRPC_STREAM_PORT", "50001")))
     bridge_url: str = field(default_factory=lambda: os.environ.get("ASTRA_BRIDGE_URL", "http://127.0.0.1:48500"))
     missions_dir: Path = field(default_factory=lambda: Path(os.environ.get("ASTRA_MISSIONS_DIR", REPO_ROOT / "missions")))
     knowledge_dir: Path = field(default_factory=lambda: Path(os.environ.get("ASTRA_KNOWLEDGE_DIR", REPO_ROOT / "knowledge")))

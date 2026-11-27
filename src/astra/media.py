@@ -229,7 +229,7 @@ class Director(threading.Thread):
             try:
                 if conn is None:
                     conn = krpc.connect(name="astra-director", address=CONFIG.krpc_host,
-                                        rpc_port=CONFIG.krpc_rpc_port, stream_port=None)  # no streams used
+                                        port=CONFIG.krpc_rpc_port)  # one port per client since protocol v2
                     cam = heading = None
                 if conn.krpc.paused or HOLD_FILE.exists():
                     heading = None  # re-read the camera when taking over again

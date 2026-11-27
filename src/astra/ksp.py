@@ -48,12 +48,12 @@ class KSP:
 
     def _connect(self, attempts: int = 3) -> None:
         if krpc is None:
-            raise NotConnected("the krpc package is not installed", "pip install krpc==0.5.4")
+            raise NotConnected("the krpc package is not installed", "pip install krpc==0.8.0")
         last: Exception | None = None
         for i in range(attempts):
             try:
                 self._conn = krpc.connect(name="astra", address=CONFIG.krpc_host,
-                                          rpc_port=CONFIG.krpc_rpc_port, stream_port=CONFIG.krpc_stream_port)
+                                          port=CONFIG.krpc_rpc_port)
                 self._last_health = time.monotonic()
                 return
             except Exception as exc:  # noqa: BLE001
@@ -116,7 +116,7 @@ class KSP:
 
     def scene(self) -> str:
         """'flight', 'space_center', 'tracking_station', 'editor_vab', 'editor_sph', ..."""
-        return str(self.conn.krpc.current_game_scene).split(".")[-1]
+        return str(self.conn.krpc.game_scene).split(".")[-1]
 
     def require_flight(self) -> None:
         s = self.scene()
