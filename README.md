@@ -141,7 +141,7 @@ Python 客户端会自动读取；其他本机工具得自己发 `Authorization:
   ▼
 astra（Python）— 工具 · 约 20 Hz 反射引擎 · 物理计算 · craft 写入 · 日志 · 录像
   │ kRPC 0.8.0：遥测、控制、节点、时间扭曲
-  │ KspAutomationBridge 2.1.0：部件库、EVA、MechJeb、暂停、CAPCOM、录像
+  │ KspAutomationBridge 2.2.0：部件库、EVA、MechJeb、暂停、CAPCOM、录像
   ▼
 KSP 1.12.5 + MechJeb2 + ModuleManager + Harmony
 ```

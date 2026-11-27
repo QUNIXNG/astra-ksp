@@ -14,7 +14,7 @@ namespace KspAutomationBridge
     [KSPAddon(KSPAddon.Startup.EveryScene, true)]
     public sealed class AutomationBridgeAddon : MonoBehaviour
     {
-        public const string BridgeVersion = "2.1.0";
+        public const string BridgeVersion = "2.2.0";
         public const int DefaultPort = 48500;
         private const int DrainBudgetMs = 100;
 

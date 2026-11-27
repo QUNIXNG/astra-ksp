@@ -1,4 +1,4 @@
-# KspAutomationBridge HTTP API (bridge 2.1.0)
+# KspAutomationBridge HTTP API (bridge 2.2.0)
 
 Added in 2.1: `/eva-hop` (EVA jetpack hops; `{stop: true}` cancels walks and hops alike), the
 `/record/*` video recorder, and `flightLoaded` on `/pause` (a pause is refused only while the flight

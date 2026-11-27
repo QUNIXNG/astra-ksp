@@ -276,7 +276,7 @@ frame), `sas` (a SAS mode), `free`, `keep`. Autopilot reference frames are never
 
 ## Bridge plugin (`csharp/KspAutomationBridge`)
 
-Bridge 2.1.0 (`/ping` and `/state` report `bridgeVersion`). C# 5 (in-box `csc` v4), 21 source files
+Bridge 2.2.0 (`/ping` and `/state` report `bridgeVersion`). C# 5 (in-box `csc` v4), 21 source files
 plus `Properties/AssemblyInfo.cs`, HTTP on 127.0.0.1:48500 with a main-thread job queue (a job that
 times out before it starts is abandoned, never run late). Full reference with every parameter,
 status code and return field: `docs/BRIDGE_API.md`; `GET /routes` lists what the installed build

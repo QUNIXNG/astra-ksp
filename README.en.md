@@ -138,7 +138,7 @@ Model (MCP client)
   ▼
 astra (Python) — tools · reflex engine (~20 Hz) · physics · craft writer · journal · recorder
   │ kRPC 0.8.0: telemetry, control, nodes, warp
-  │ KspAutomationBridge 2.1.0: part database, EVA, MechJeb, pause, CAPCOM, recorder
+  │ KspAutomationBridge 2.2.0: part database, EVA, MechJeb, pause, CAPCOM, recorder
   ▼
 KSP 1.12.5 + MechJeb2 + ModuleManager + Harmony
 ```
