@@ -59,11 +59,21 @@ Requires:
 ASTRA finds KSP through Steam's `libraryfolders.vdf` and a running `KSP_x64.exe`. Set
 `ASTRA_KSP_DIR` to override discovery.
 
+**Download build (no git):** grab `astra-ksp-2.1.0-win64.zip` from
+[Releases](https://github.com/QUNIXNG/astra-ksp/releases/latest), unzip it, and run one command in
+that folder. It creates the venv, installs the dependencies, and builds plus installs the plugin:
+
+```powershell
+pwsh -NoProfile -File install.ps1
+```
+
+**From source:**
+
 ```bash
 git clone https://github.com/QUNIXNG/astra-ksp.git
 cd astra-ksp
 python -m venv .venv
-.venv/Scripts/python.exe -m pip install -e ".[agent,media,dev]"
+.venv/Scripts/python.exe -m pip install -e ".[media]"
 ```
 
 Close KSP, then build and install the bridge plugin. This compiles against your KSP install with
