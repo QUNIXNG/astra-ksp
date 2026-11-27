@@ -4,60 +4,68 @@
 
 [English](README.en.md) | 简体中文
 
-### 把正在运行的 Kerbal Space Program 交给 Claude，让它自己飞完整个任务。
+### 让 Claude 真的把一艘飞船从发射台送到另一个天体，再带回来。
 
-74 个 MCP 工具，一个循环：观察 → 计算 → 决策 → 行动 → 验证。AI 思考时，游戏暂停。
+不用写飞行脚本，不用背 Δv 表。AI 读实时遥测、现算每一个数字，自己决定什么时候点火。
 
 [![KSP1](https://img.shields.io/badge/Kerbal%20Space%20Program-1.12.5-blue)](https://www.kerbalspaceprogram.com/)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MCP](https://img.shields.io/badge/接口-MCP-6f42c1)](https://modelcontextprotocol.io/)
-[![kRPC](https://img.shields.io/badge/遥测-kRPC%200.5.4-1f8fff)](https://krpc.github.io/krpc/)
+[![kRPC](https://img.shields.io/badge/遥测-kRPC%200.8.0-1f8fff)](https://krpc.github.io/krpc/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[安装](#安装) · [飞行](#飞行) · [工作原理](#工作原理) · [安全](#安全与副作用) · [工具](docs/TOOLS.md) · [飞行记录](docs/missions/)
+[它能做什么](#它能做什么) · [已有证据](#已有证据) · [试一下](#试一下) ·
+[工作原理](#工作原理) · [安全](#安全与副作用) · [工具手册](docs/TOOLS.md)
 
 </div>
 
-ASTRA 把 KSP 1 变成 74 个 MCP 工具：仪器、计算器、直接控制和短视界反射动作。Claude
-既是宇航员也是地面飞控——读实时部件库、设计火箭、发射、规划并执行转移、着陆，送
-Kerbal 出舱插旗，再飞回家。
+## 这解决什么问题
 
-每个数字都由实时遥测计算。仓库里没有任何任务脚本：目标高度、燃烧时刻、俯仰程序、
-分级、着陆点和裕度都由 AI 当场决定。
+KSP 里造火箭不难，**飞**火箭难。转移窗口要算相位角，点火要在秒级精度内关车，着陆前
+得知道正下方 3 km 有没有坡，Duna 的大气又薄到降落伞几乎不减速。这些事你可以手动做完，
+也可以写一堆 kOS 脚本——但脚本只在你提前想到的情况里有效，遇到意外就停在那儿了。
 
-[观看飞行录像](https://github.com/shoal-rat/astra-ksp/releases/tag/v2.0.0) ·
-[工具手册](docs/TOOLS.md) · [架构](docs/ARCHITECTURE.md)
+ASTRA 换了条路：把正在运行的 KSP 变成 **74 个 MCP 工具**，交给 Claude 当场决策。
+它读真实遥测、搜当前安装的部件库、算 Δv、建节点、执行燃烧、着陆、出舱插旗，然后飞回家。
+
+仓库里**没有任何任务脚本**。目标高度、点火时刻、俯仰程序、分级时机、着陆点、安全裕度，
+全部由 AI 在现场算出来。这不是一段演示视频——8 次真实飞行、473 次工具调用的记录都在
+[`docs/missions/`](docs/missions/)。
 
 ## 它能做什么
 
-- **设计火箭**：搜索当前安装的部件、读取详细参数并生成 `.craft`；`design_check`
-  计算各级 Δv、推重比，并检查操纵力矩和电力。
-- **飞行**：用 MechJeb 执行上升与规划，或用 AI 自行编写的程序通过 `fly_until`
-  飞行；创建节点、执行燃烧和切换目标。
-- **动力着陆**：`fly_descent` 数值积分预测自杀燃烧，检查前方地形，消除横向漂移，
-  末段悬停后触地，并留下 SAS 保持姿态。
-- **出舱探索**：管理乘组与座位，控制喷气背包跳跃、行走、插旗和返回座舱；通过
-  Harmony 补丁驱动原版 EVA。
-- **验证与留痕**：燃烧回报实际 Δv，发射回报实际乘员；每次调用写入 `log.jsonl`，
-  决策进入 `journal.md` 和游戏内 CAPCOM 面板（F8）。
+- **设计火箭**：搜索你当前装的部件、读详细参数、生成 `.craft`；`design_check` 算各级
+  Δv 与推重比，检查操纵力矩和电力够不够。
+- **飞行**：用 MechJeb 执行上升与规划，或让 AI 用 `fly_until` 飞自己写的程序；建节点、
+  执行燃烧、切换目标。
+- **动力着陆**：`fly_descent` 数值积分预测自杀燃烧，检查前方地形，消除横向漂移，末段
+  悬停后触地，落地后留下 SAS 保持姿态。
+- **出舱探索**：管理乘组与座位，控制喷气背包跳跃、行走、插旗、返回座舱；通过 Harmony
+  补丁驱动原版 EVA。
+- **验证与留痕**：燃烧回报实际施加的 Δv，发射回报实际乘员；每次调用写入 `log.jsonl`，
+  决策写进 `journal.md` 和游戏内 CAPCOM 面板（F8）。
 
-公开证据：8 份飞行日志、473 次工具调用，5 次完成、3 次主动中止。第一枚 AI 设计的
-载人火箭进入 80.3 × 79.6 km 坎星轨道；Duna 着陆器以 1.22 m/s 触地，横向速度
-0.01 m/s，距发射 377 个 Kerbin 天。详见[飞行日志](docs/missions/)与
-[经验教训](knowledge/lessons.md)。
+## 已有证据
 
-## 安装
+| 记录 | 数字 |
+|---|---|
+| 飞行日志 | 8 次任务、473 次工具调用，5 次完成、3 次主动中止 |
+| 第一枚 AI 设计的载人火箭 | 进入 80.3 × 79.6 km 坎星轨道 |
+| Duna 着陆 | 以 1.22 m/s 触地，横向速度 0.01 m/s，距发射 377 个 Kerbin 天 |
 
-需要：
+主动中止的 3 次也算在记录里——中止是设计内的选择，不是崩溃。详见
+[飞行日志](docs/missions/) 与 [经验教训](knowledge/lessons.md)。
+
+## 试一下
+
+**先看效果**：不用装任何东西，[看一次完整飞行录像](https://github.com/shoal-rat/astra-ksp/releases/tag/v2.0.0)。
+
+**自己跑**，需要：
 
 - Windows 和 **Kerbal Space Program 1.12.5**
-- **kRPC 0.5.4**、**MechJeb2**、**ModuleManager**、**Harmony**
-  （`GameData/000_Harmony`）
+- **kRPC 0.8.0**、**MechJeb2**、**ModuleManager**、**Harmony**（`GameData/000_Harmony`）
 - Python 3.11+
-- 已登录的 Claude Code；自主任务复用本机登录，不需要 API Key。
-
-ASTRA 从 Steam 的 `libraryfolders.vdf` 和运行中的 `KSP_x64.exe` 查找游戏。手动指定
-位置时设置 `ASTRA_KSP_DIR`。
+- 已登录的 Claude Code；自主任务复用本机登录，不需要 API Key
 
 ```bash
 git clone https://github.com/QUNIXNG/astra-ksp.git
@@ -66,71 +74,72 @@ python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[agent,media,dev]"
 ```
 
-关闭 KSP，然后编译并安装桥接插件。它使用本机 .NET Framework 的 `csc.exe`，针对你的
-KSP 安装编译，并写入 `GameData/KspAutomationBridge/`：
+ASTRA 会从 Steam 的 `libraryfolders.vdf` 和运行中的 `KSP_x64.exe` 找到游戏；要手动指定
+位置就设 `ASTRA_KSP_DIR`。
+
+**关掉 KSP**，编译并安装桥接插件。它用本机 .NET Framework 的 `csc.exe` 针对你的 KSP
+安装编译，产物写进 `GameData/KspAutomationBridge/`：
 
 ```bash
 .venv/Scripts/astra.exe bridge install
 ```
 
-桥接插件首次启动时把 bearer 令牌写入
-`GameData/KspAutomationBridge/PluginData/bridge.cfg`。Python 客户端自动读取；其他本机
-工具必须发送 `Authorization: Bearer <token>`。
+插件首次启动时把 bearer 令牌写进 `GameData/KspAutomationBridge/PluginData/bridge.cfg`，
+Python 客户端会自动读取；其他本机工具得自己发 `Authorization: Bearer <token>`。
 
-可选：创建干净存档并启动游戏。`newsave` 从已有存档复制设置和宇航员名单，`--from`
-填写存档文件夹名；中文版游戏的原版存档可能叫 `默认` 而不是 `default`。
+想用干净存档就先建一个再启动。`newsave` 从已有存档复制设置和宇航员名单，`--from` 填
+存档文件夹名——中文版游戏的原版存档可能叫 `默认` 而不是 `default`：
 
 ```bash
 .venv/Scripts/astra.exe newsave astra --from default
 .venv/Scripts/astra.exe up --save astra
 ```
 
-## 飞行
+**然后对它说一句话就行。** 三种用法，同一套工具：
 
-同一套工具有三种用法。
-
-- **Claude Code（你担任飞行指挥）**：在本目录打开 Claude Code。`.mcp.json` 启动
-  ASTRA MCP 服务，`CLAUDE.md` 定义飞行乘组。例如：
-  *“送一个 Kerbal 上 Mun，插旗，然后带他回家。”*
-- **自主任务**：Claude Agent SDK 乘组只用 ASTRA 工具完成目标，另有
-  `booster-engineer` 和 `fido` 子代理；没有 shell 和文件访问，不能写飞行脚本。
-  日志与对话记录保存到 `missions/<时间戳>-<目标>/`。
+- **Claude Code（你当飞行指挥）**：在本目录打开 Claude Code，`.mcp.json` 会起 ASTRA
+  MCP 服务，`CLAUDE.md` 定义飞行乘组。比如：*“送一个 Kerbal 上 Mun，插旗，然后带他回家。”*
+- **自主任务**：Claude Agent SDK 乘组只用 ASTRA 工具完成目标，另有 `booster-engineer`
+  和 `fido` 子代理；没有 shell、没有文件访问，写不了飞行脚本。日志和对话存到
+  `missions/<时间戳>-<目标>/`。
 
   ```bash
   .venv/Scripts/astra.exe mission "land on the Mun and return"
   ```
 
-- **手动调用**：用守护进程在多次调用之间保持控制状态：
+- **手动调用**：用守护进程在多次调用之间保持控制状态。
 
   ```bash
   .venv/Scripts/astra.exe serve --http
   .venv/Scripts/astra.exe call telemetry detail=brief
   ```
 
-`astra tools -v` 列出所有工具。[`docs/TOOLS.md`](docs/TOOLS.md) 提供同样的参数说明；
-[`AGENTS.md`](AGENTS.md) 演示如何在其他 MCP 客户端注册服务。
+`astra tools -v` 列出全部工具，参数说明见 [`docs/TOOLS.md`](docs/TOOLS.md)；
+在别的 MCP 客户端里注册服务的写法见 [`AGENTS.md`](AGENTS.md)。
 
 ## 工作原理
 
-语言模型回答需要几秒，大气中的火箭不会等待。ASTRA 在每次工具返回时暂停游戏，但不打开
-KSP 的 ESC 菜单；暂停时仍能读取遥测、编辑节点和修改控制。只有反射动作（`fly_*`）、带
-`watch` 的 MechJeb 调用、宇航员动作、分级、检查点和飞船切换会推进游戏时间。
+语言模型回一句话要几秒，大气层里的火箭不会等。所以 ASTRA 的核心是**暂停模型**：
+每次工具返回就冻结游戏时间（但不弹 KSP 的 ESC 菜单），暂停期间照样能读遥测、改节点、
+调控制。只有这几件事会推进时间——反射动作（`fly_*`）、带 `watch` 的 MechJeb 调用、
+宇航员动作、分级、检查点、飞船切换。
 
-**反射动作**是基于 kRPC 数据流、约 20 Hz 的控制循环。AI 指定停止条件，例如
-`surface_altitude <= 6000`，或 `landed` 事件；动作执行到条件满足、联锁触发或时间
-上限。联锁包括熄火、部件丢失、SOI 变化、过热、撞击风险、失控和低电量。它只停止动作并
-交还控制权，不会替 AI 飞行。
+**反射动作**是挂到 kRPC 数据流上的约 20 Hz 控制循环。AI 给一个停止条件，比如
+`surface_altitude <= 6000` 或 `landed` 事件，动作跑到条件满足、联锁触发或超时为止。
+联锁包括熄火、部件丢失、SOI 变化、过热、撞击风险、失控和低电量。联锁只停下动作、把
+控制权交还，绝不替 AI 飞行。
 
-工具只有仪器、计算器、控制和反射动作四类，没有任何工具能执行整个任务，参数默认值也
-不能暗含任务决策。设计规则见 [`knowledge/doctrine.md`](knowledge/doctrine.md)；
-playbook 教如何推导数字，而不是直接给出数字。
+工具只有四类：仪器、计算器、控制、反射动作。**没有任何一个工具能一口气跑完整个任务**，
+参数默认值也不能偷偷替 AI 做决定。设计规则写在
+[`knowledge/doctrine.md`](knowledge/doctrine.md)——playbook 教它怎么推导数字，而不是
+直接给它数字。
 
 ```text
 Claude（Claude Code 或 astra mission）
   │  MCP · 74 个工具 · 每次工具返回即暂停
   ▼
 astra（Python）— 工具 · 约 20 Hz 反射引擎 · 物理计算 · craft 写入 · 日志 · 录像
-  │ kRPC 0.5.4：遥测、控制、节点、时间扭曲
+  │ kRPC 0.8.0：遥测、控制、节点、时间扭曲
   │ KspAutomationBridge 2.1.0：部件库、EVA、MechJeb、暂停、CAPCOM、录像
   ▼
 KSP 1.12.5 + MechJeb2 + ModuleManager + Harmony
@@ -138,22 +147,21 @@ KSP 1.12.5 + MechJeb2 + ModuleManager + Harmony
 
 ## 安全与副作用
 
-- 桥接插件仅监听 `127.0.0.1:48500`，要求上述 bearer 令牌；但这不是操作系统沙箱，
-  同一用户运行的软件仍能读取 `bridge.cfg`。不要暴露端口或公开令牌。
-- 加载存档会在场景启动前把它写回 `persistent.sfs`，与 KSP 原版读档对话框一致。
-  `game_load_save` 返回 `persistent_save_overwritten: true`；切换飞船和离开飞行场景
+- 桥接插件只监听 `127.0.0.1:48500` 并要求上面那个 bearer 令牌，但它**不是操作系统
+  沙箱**：同一个用户跑的软件仍然能读到 `bridge.cfg`。别把端口暴露出去，也别公开令牌。
+- 加载存档会在场景启动前把它写回 `persistent.sfs`，跟 KSP 原版读档对话框的行为一致。
+  `game_load_save` 会返回 `persistent_save_overwritten: true`；切换飞船、离开飞行场景
   也可能写入持久存档。
-- 发射台已有飞船时，`game_launch` 默认拒绝；只有明确传入 `recover_site=true`
+- 发射台上已经有飞船时，`game_launch` 默认拒绝启动；只有明确传 `recover_site=true`
   才会回收旧飞船。
-- 无人值守实验请使用专用存档。检查点可以帮助回滚，但错误的恢复仍可能丢失之后的进度。
-- 桥接插件通过 KSP 内部接口（kRPC、Harmony、MechJeb）控制游戏；任何不能丢失的存档都应
-  另行备份。
+- 无人值守实验请用专用存档。检查点能帮你回滚，但恢复错了照样会丢之后的进度。
+- 插件靠 KSP 内部接口（kRPC、Harmony、MechJeb）干活，**任何不能丢的存档都请另外备份**。
 
 ## 录像
 
-桥接插件从屏幕外读取画面并交给 ffmpeg 编码 H.264。每个录像目录包含 `video.mkv`、
-`frames.csv` 和 `marks.csv`；AI 暂停思考的期间不会录像。安装 `media` 可选依赖即可
-带上 ffmpeg，也可以使用 `PATH` 中已有的 ffmpeg。
+插件从屏幕外抓帧交给 ffmpeg 编 H.264。每个录像目录有 `video.mkv`、`frames.csv` 和
+`marks.csv`；AI 暂停思考的片段不会录进去。装上 `media` 可选依赖就自带 ffmpeg，也可以
+用 `PATH` 里已有的。
 
 ```bash
 .venv/Scripts/astra.exe record --dir recordings/my-flight
@@ -176,9 +184,9 @@ KSP 1.12.5 + MechJeb2 + ModuleManager + Harmony
 .venv/Scripts/python.exe -m pytest -q tests csharp/KspAutomationBridge/Tests
 ```
 
-测试不会启动、读档、写档、扭曲时间或修改游戏。添加工具前阅读
+测试不会启动游戏、读档、写档、扭曲时间或改游戏。加工具前先读
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)：工具是用 `@tool("<group>")` 注册的
-同步函数；每个参数都要向 AI 描述；结果使用 SI 单位；预期失败抛出
+同步函数；每个参数都要向 AI 描述；结果用 SI 单位；预期失败抛
 `AstraError(message, hint)`；默认值不能编码任务决策。桥接端点见
 [`docs/BRIDGE_API.md`](docs/BRIDGE_API.md)；工具手册用 `astra tools --markdown` 重新生成。
 
