@@ -67,7 +67,7 @@ ASTRA 换了条路：把正在运行的 KSP 变成 **74 个 MCP 工具**，交�
 - 一个支持 MCP 的模型客户端，模型由客户端决定
 
 **下载版（不用 git）**：从 [Releases](https://github.com/QUNIXNG/astra-ksp/releases/latest) 取
-`astra-ksp-2.1.0-win64.zip`，解压，进入该目录运行一条命令——它建 venv、装依赖、编译并装好插件：
+`astra-ksp-<版本>-win64.zip`，解压，进入该目录运行一条命令——它建 venv、装依赖、编译并装好插件：
 
 ```powershell
 pwsh -NoProfile -File install.ps1

@@ -59,7 +59,7 @@ Requires:
 ASTRA finds KSP through Steam's `libraryfolders.vdf` and a running `KSP_x64.exe`. Set
 `ASTRA_KSP_DIR` to override discovery.
 
-**Download build (no git):** grab `astra-ksp-2.1.0-win64.zip` from
+**Download build (no git):** grab `astra-ksp-<version>-win64.zip` from
 [Releases](https://github.com/QUNIXNG/astra-ksp/releases/latest), unzip it, and run one command in
 that folder. It creates the venv, installs the dependencies, and builds plus installs the plugin:
 
