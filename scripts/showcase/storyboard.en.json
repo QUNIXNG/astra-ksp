@@ -53,7 +53,7 @@
    "chapter": "Landing on Duna (Mars)"
   },
   "autonomous": {
-   "narration": "You can direct it step by step in a chat, or go hands-off with one command. Type astra mission and a goal, and Claude assembles a crew with nothing but these tools: it can't write or run a program. It designs, launches and flies, then writes the report. Its first solo mission: Valentina to orbit and safely home.",
+   "narration": "You can direct it step by step in a chat, or go hands-off with one command. Type astra mission and a goal, and it assembles a crew with nothing but these tools: it can't write or run a program. It designs, launches and flies, then writes the report. Its first solo mission: Valentina to orbit and safely home.",
    "chapter": "One Command, Fully Autonomous"
   },
   "outro": {

@@ -4,7 +4,7 @@
 
 English | [简体中文](README.md)
 
-### Give Claude a running game of Kerbal Space Program, and it flies the mission itself.
+### Give an AI a running game of Kerbal Space Program, and it flies the mission itself.
 
 74 MCP tools, one loop: observe → compute → decide → act → verify. The game pauses while the AI thinks.
 
@@ -19,7 +19,7 @@ English | [简体中文](README.md)
 </div>
 
 ASTRA turns KSP 1 into 74 MCP tools: instruments, calculators, direct controls and short control
-reflexes. Claude uses them as astronaut and mission control — it reads the live part catalog,
+reflexes. The AI uses them as astronaut and mission control — it reads the live part catalog,
 designs a rocket, launches it, plans and executes the transfer, lands, sends a kerbal out to plant
 a flag, and flies home.
 
@@ -54,7 +54,8 @@ Requires:
 - Windows and **Kerbal Space Program 1.12.5**
 - **kRPC 0.8.0**, **MechJeb2**, **ModuleManager**, and **Harmony** (`GameData/000_Harmony`)
 - Python 3.11+
-- Claude Code, signed in. Autonomous missions reuse the local login; no API key is needed.
+- An MCP-capable model client for conversational flying; `astra mission` brings its own
+  runner and needs no API key.
 
 ASTRA finds KSP through Steam's `libraryfolders.vdf` and a running `KSP_x64.exe`. Set
 `ASTRA_KSP_DIR` to override discovery.
@@ -90,10 +91,12 @@ an existing save (`--from` names its folder); on a Chinese KSP install the stock
 
 There are three ways to use the same tool set.
 
-- **Claude Code (human flight director).** Open Claude Code in this folder. `.mcp.json` starts the
-  ASTRA MCP server and `CLAUDE.md` makes the session the flight crew. For example:
+- **MCP client (human flight director).** Open this folder in any MCP-capable client.
+  `.mcp.json` starts the ASTRA MCP server and the bundled crew brief turns the session into
+  the flight crew. For example:
   *"Land a kerbal on the Mun, plant a flag, and bring them home."*
-- **Autonomous mission.** A Claude Agent SDK crew flies the goal with ASTRA tools only, plus the
+- **Autonomous mission.** The bundled runner launches a crew that flies the goal with ASTRA
+  tools only, plus the
   `booster-engineer` and `fido` subagents. It has no shell or file access, so it cannot script the
   flight. Logs and transcripts go to `missions/<timestamp>-<goal>/`.
 
@@ -130,7 +133,7 @@ parameter default may encode a mission decision. The design rules live in
 which numbers to enter.
 
 ```text
-Claude (Claude Code or astra mission)
+Model (MCP client or astra mission)
   │  MCP · 74 tools · pause on every tool return
   ▼
 astra (Python) — tools · reflex engine (~20 Hz) · physics · craft writer · journal · recorder
@@ -194,7 +197,7 @@ the tool reference with `astra tools --markdown`.
 Built on [Kerbal Space Program](https://www.kerbalspaceprogram.com/),
 [kRPC](https://krpc.github.io/krpc/), **MechJeb2**, **ModuleManager**, **Harmony**, the
 [Model Context Protocol](https://modelcontextprotocol.io/) Python SDK, pydantic, Pillow,
-**Claude Code**, the **Claude Agent SDK**, and **imageio-ffmpeg**.
+and **imageio-ffmpeg**.
 
 This is a fork of [shoal-rat/astra-ksp](https://github.com/shoal-rat/astra-ksp). The upstream
 project and its flight logs remain the source for the original design and evidence.

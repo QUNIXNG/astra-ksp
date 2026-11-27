@@ -13,14 +13,14 @@ recording install runs KSP localized as zh-cn; the overlays (subtitles, tool cal
 ## Title (pick one)
 
 - An AI Flies Kerbal Space Program: Mun and Mars Landings, No Scripts | ASTRA
-- I Gave Claude a Rocket: It Designed It, Flew It, and Landed on Mars (KSP)
+- I Gave an AI a Rocket: It Designed It, Flew It, and Landed on Mars (KSP)
 - An AI Astronaut Lands on the Mun and Duna, With No Mission Script | Kerbal Space Program
 
 ## Description
 
 ```text
 An AI flew these missions itself. ASTRA turns a running game of Kerbal Space Program into 74 tools
-(instruments, calculators, controls and short reflexes), and Claude uses them as astronaut and
+(instruments, calculators, controls and short reflexes), and the AI uses them as astronaut and
 mission control: it designs the rocket from the live part catalog, launches it, plans the transfer,
 lands with its own powered-descent guidance, sends a kerbal out to plant a flag, and flies home.
 
@@ -34,7 +34,7 @@ bottom-left line is the telemetry at that moment):
 - powered landing on the Mun at 0.03 m/s, the failures on the way there, and a flag
 - a Lambert transfer to Duna (KSP's Mars), aerobraking, parachutes and a powered touchdown at 1.2 m/s
 - Valentina Kerman plants a flag on Duna
-- `astra mission`: one command, and a Claude crew with only these tools flies the whole thing
+- `astra mission`: one command, and a crew with only these tools flies the whole thing
 
 Open source (MIT): https://github.com/shoal-rat/astra-ksp
 Flight logs of every mission, including the failed attempts: https://github.com/shoal-rat/astra-ksp/tree/main/docs/missions
@@ -60,7 +60,7 @@ Interactive; this is a fan project, not affiliated with or endorsed by them.
 
 ## Tags
 
-Kerbal Space Program, KSP, AI, Claude, Anthropic, artificial intelligence, AI agent, MCP, Model Context Protocol,
+Kerbal Space Program, KSP, AI, artificial intelligence, AI agent, MCP, Model Context Protocol,
 autonomous, space, rocket, Mun landing, Mars landing, Duna, MechJeb, kRPC, open source, programming, space flight
 
 ## Settings

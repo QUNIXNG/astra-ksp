@@ -4,7 +4,7 @@
 
 [English](README.en.md) | 简体中文
 
-### 让 Claude 真的把一艘飞船从发射台送到另一个天体，再带回来。
+### 让 AI 真的把一艘飞船从发射台送到另一个天体，再带回来。
 
 不用写飞行脚本，不用背 Δv 表。AI 读实时遥测、现算每一个数字，自己决定什么时候点火。
 
@@ -25,7 +25,7 @@ KSP 里造火箭不难，**飞**火箭难。转移窗口要算相位角，点火
 得知道正下方 3 km 有没有坡，Duna 的大气又薄到降落伞几乎不减速。这些事你可以手动做完，
 也可以写一堆 kOS 脚本——但脚本只在你提前想到的情况里有效，遇到意外就停在那儿了。
 
-ASTRA 换了条路：把正在运行的 KSP 变成 **74 个 MCP 工具**，交给 Claude 当场决策。
+ASTRA 换了条路：把正在运行的 KSP 变成 **74 个 MCP 工具**，交给 AI 当场决策。
 它读真实遥测、搜当前安装的部件库、算 Δv、建节点、执行燃烧、着陆、出舱插旗，然后飞回家。
 
 仓库里**没有任何任务脚本**。目标高度、点火时刻、俯仰程序、分级时机、着陆点、安全裕度，
@@ -65,7 +65,7 @@ ASTRA 换了条路：把正在运行的 KSP 变成 **74 个 MCP 工具**，交�
 - Windows 和 **Kerbal Space Program 1.12.5**
 - **kRPC 0.8.0**、**MechJeb2**、**ModuleManager**、**Harmony**（`GameData/000_Harmony`）
 - Python 3.11+
-- 已登录的 Claude Code；自主任务复用本机登录，不需要 API Key
+- 一个支持 MCP 的模型客户端（对话式飞行用）；`astra mission` 自带运行器，不需要 API Key
 
 ```bash
 git clone https://github.com/QUNIXNG/astra-ksp.git
@@ -97,9 +97,10 @@ Python 客户端会自动读取；其他本机工具得自己发 `Authorization:
 
 **然后对它说一句话就行。** 三种用法，同一套工具：
 
-- **Claude Code（你当飞行指挥）**：在本目录打开 Claude Code，`.mcp.json` 会起 ASTRA
-  MCP 服务，`CLAUDE.md` 定义飞行乘组。比如：*“送一个 Kerbal 上 Mun，插旗，然后带他回家。”*
-- **自主任务**：Claude Agent SDK 乘组只用 ASTRA 工具完成目标，另有 `booster-engineer`
+- **MCP 客户端（你当飞行指挥）**：在任意支持 MCP 的客户端里打开本目录，`.mcp.json`
+  会起 ASTRA MCP 服务，仓库自带的乘组说明会把它约束成飞行乘组。比如：*“送一个 Kerbal
+  上 Mun，插旗，然后带他回家。”*
+- **自主任务**：内置运行器起一个只有 ASTRA 工具的乘组去完成目标，另有 `booster-engineer`
   和 `fido` 子代理；没有 shell、没有文件访问，写不了飞行脚本。日志和对话存到
   `missions/<时间戳>-<目标>/`。
 
@@ -135,7 +136,7 @@ Python 客户端会自动读取；其他本机工具得自己发 `Authorization:
 直接给它数字。
 
 ```text
-Claude（Claude Code 或 astra mission）
+模型（MCP 客户端或 astra mission）
   │  MCP · 74 个工具 · 每次工具返回即暂停
   ▼
 astra（Python）— 工具 · 约 20 Hz 反射引擎 · 物理计算 · craft 写入 · 日志 · 录像
@@ -195,7 +196,7 @@ KSP 1.12.5 + MechJeb2 + ModuleManager + Harmony
 基于 [Kerbal Space Program](https://www.kerbalspaceprogram.com/)、
 [kRPC](https://krpc.github.io/krpc/)、**MechJeb2**、**ModuleManager**、**Harmony**、
 [Model Context Protocol](https://modelcontextprotocol.io/) Python SDK、pydantic、
-Pillow、**Claude Code**、**Claude Agent SDK** 和 **imageio-ffmpeg** 构建。
+Pillow 和 **imageio-ffmpeg** 构建。
 
 本项目是 [shoal-rat/astra-ksp](https://github.com/shoal-rat/astra-ksp) 的 fork。
 上游仓库及飞行日志仍是原始设计与飞行证据的来源。

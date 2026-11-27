@@ -341,7 +341,7 @@
   },
   {
    "id": "autonomous",
-   "narration": "除了在对话里一步步指挥，ASTRA 还可以一条命令放手：输入 astra mission，加上任务目标，Claude 就会组建一个只拿到这些工具的机组，自己设计、发射、飞行，最后写下任务报告。它第一次独立完成的任务，是把瓦伦蒂娜送上轨道，再平安溅落回家。",
+   "narration": "除了在对话里一步步指挥，ASTRA 还可以一条命令放手：输入 astra mission，加上任务目标，它就会组建一个只拿到这些工具的机组，自己设计、发射、飞行，最后写下任务报告。它第一次独立完成的任务，是把瓦伦蒂娜送上轨道，再平安溅落回家。",
    "visual": [
     {
      "card": "terminal",
@@ -349,7 +349,7 @@
      "lines": [
       "$ astra mission \"Design a crewed rocket from the live part catalog,",
       "    launch it to a stable orbit around Kerbin, then bring the crew home safely.\"",
-      "ASTRA mission control · model claude-opus-5-5 · tools: astra MCP only",
+      "ASTRA mission control · tools: astra MCP only",
       "[crew] game_status · journal_read_doctrine · lessons_search",
       "[crew] parts_search · design_check · design_build · game_launch",
       "[crew] fly_until (pitch program, approach apoapsis 80 km)",

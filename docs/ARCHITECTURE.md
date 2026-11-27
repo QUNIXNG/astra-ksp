@@ -7,7 +7,7 @@ no landing sequence. Tools are *capabilities* (instruments, calculators, control
 reflexes). Every parameter that encodes a mission decision comes from the AI at call time.
 
 ```
- AI crew (Claude Code session, `astra mission` Agent SDK runner, or any MCP client)
+ AI crew (an MCP client session, the `astra mission` runner, or any agent)
         │  MCP (stdio)                         │ CLI: astra call <tool> k=v ...
         ▼                                      ▼
  astra.server ──► astra.registry (tools, schemas, game lock, flight-recorder hooks)
@@ -57,7 +57,7 @@ until an AI-chosen trigger fires.
 | `src/astra/craft/` | ConfigNode parser/serializer, part catalog, craft spec, stage simulator, .craft writer |
 | `src/astra/reflex/` | control-loop engine, trigger language, burn executor, powered-descent controller |
 | `src/astra/tools/*.py` | the tool functions, grouped as below |
-| `src/astra/agent/runner.py` | `astra mission "<goal>"`: Claude Agent SDK crew with only the astra tools; `--record` films it through `media.Session` |
+| `src/astra/agent/runner.py` | `astra mission "<goal>"`: an Agent SDK crew with only the astra tools; `--record` films it through `media.Session` |
 | `src/astra/media.py` | Filming (`astra record`, `astra mission --record`), not a crew tool: bridge recorder control (`/record/*`); tool-call marks through `registry.add_start_hook`/`add_hook`, posted only while the marker file `.cache/recording.json` says a recording started from ASTRA runs (read-only instruments are skipped); a camera `Director` thread on its own kRPC connection that moves only the camera, only while game time runs and `HOLD_FILE` (`.cache/director.hold`) does not exist; `Session` starts and stops all three. `.cache` is `ASTRA_CACHE_DIR`. Video needs ffmpeg: the `media` extra (`imageio-ffmpeg`) or one on PATH |
 | `knowledge/doctrine.md` | operating contract for the AI crew (read via `journal_read_doctrine`) |
 | `knowledge/playbooks/*.md` | physics notes per phase (read via `playbook`) |

@@ -68,7 +68,7 @@ TEXT: dict[str, dict] = {
         "ass_font": "Microsoft YaHei",
         "sub_size": 54,
         "boundary": "SentenceBoundary",  # captions: TTS sentences split at commas
-        "title": ("让 AI 当宇航员：从设计火箭到登陆火星", "Claude × Kerbal Space Program · 全程 AI 自主操作"),
+        "title": ("让 AI 当宇航员：从设计火箭到登陆火星", "Kerbal Space Program · 全程 AI 自主操作"),
         "loop_title": "AI 的工作方式：没有任务脚本，只有工具",
         "loop_steps": ("观察", "计算", "决策", "执行", "验证"),
         "loop_lines": ("{tools} 个工具：遥测 · 轨道计算 · 火箭设计 · 控制 · 反射动作 · MechJeb · 出舱 · 任务日志",
@@ -103,7 +103,7 @@ TEXT: dict[str, dict] = {
         "sub_size": 52,
         "boundary": "WordBoundary",  # captions: chunks of the narration timed word by word
         "title": ("An AI astronaut: from rocket design to landing on Mars",
-                  "Claude × Kerbal Space Program · every action by the AI"),
+                  "Kerbal Space Program · every action by the AI"),
         "loop_title": "How the AI works: no mission scripts, only tools",
         "loop_steps": ("OBSERVE", "COMPUTE", "DECIDE", "ACT", "VERIFY"),
         "loop_lines": ("{tools} tools: telemetry · orbital math · rocket design · control · reflexes · MechJeb · EVA"
