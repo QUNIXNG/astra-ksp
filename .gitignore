@@ -13,4 +13,7 @@ csharp/build/
 /missions/
 .cache/
 .scratch/
+.scratch_lunar/
 recordings/
+ascent.log
+circ.log

@@ -1,6 +1,6 @@
 """MCP server: exposes every registered tool to an AI flight crew over stdio.
 
-Run with ``astra serve`` (Claude Code picks it up from .mcp.json). Each tool runs in a worker
+Run with ``astra serve`` (an MCP client picks it up from .mcp.json). Each tool runs in a worker
 thread under the registry's game lock, so long reflexes never block the protocol loop and two
 commands never fight over the controls.
 """

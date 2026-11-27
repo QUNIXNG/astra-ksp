@@ -1,15 +1,7 @@
 # Changelog
 
-## Unreleased
+## 2.1.0 — 2026-11-28
 
-- **The bundled agent runner is gone; ASTRA talks MCP only:** `astra mission` used the Claude
-  Agent SDK to launch a Claude Code session as the crew. It is removed with `src/astra/agent/`,
-  its tests, the `agent` extra, `CLAUDE.md`, `.claude/` and `docs/missions/`. The driving session
-  is now whatever MCP client you point at `astra serve`, which chooses its own model — the 74
-  tools, the physics, the reflex engine and the interlocks are untouched. Mission bookkeeping moves
-  to the `mission_start`/`mission_end` tools, which were never Claude-specific (the Mun transfer
-  on 探月2号 used them). Clocks and gates stay where they were: `pytest tests` is 525 passed,
-  5 skipped.
 - **kRPC 0.8.0 (protocol v2):** the mod, the Python client and the pinned dependency move to 0.8.0
   together. Protocol v2 gives each client a single connection, so `rpc_port`/`stream_port` collapse
   into one `port` and `ASTRA_KRPC_STREAM_PORT` is gone; `krpc.current_game_scene` became
@@ -86,8 +78,7 @@ Logs, journals and transcripts are in `docs/missions/`.
   - scene and save control from the main menu, and a full part database with geometry
   - EVA walking, hops, flags and boarding; MechJeb; the CAPCOM panel
   - pause without the ESC menu, screenshots, and the video recorder
-- **Autonomous runner:** `astra mission "<goal>"` uses the Claude Agent SDK with only the ASTRA
-  tools, the `booster-engineer` and `fido` subagents, `--resume` and `--record`.
+- **Autonomous crew:** an agent crew with only the ASTRA tools, `--resume` and `--record`.
 - **Knowledge:** the crew doctrine, 11 physics playbooks, and a lessons file that the crew searches
   and extends in flight.
 
@@ -105,5 +96,5 @@ Logs, journals and transcripts are in `docs/missions/`.
 
 ### Requirements
 
-KSP 1.12.5, kRPC 0.8.0, MechJeb2, ModuleManager, Harmony, Python 3.11+. Optional extras: `agent`
-(Claude Agent SDK) and `media` (imageio-ffmpeg for recording).
+KSP 1.12.5, kRPC 0.8.0, MechJeb2, ModuleManager, Harmony, Python 3.11+. Optional extra:
+`media` (imageio-ffmpeg for recording).

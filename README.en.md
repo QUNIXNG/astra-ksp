@@ -54,7 +54,7 @@ Requires:
 - Windows and **Kerbal Space Program 1.12.5**
 - **kRPC 0.8.0**, **MechJeb2**, **ModuleManager**, and **Harmony** (`GameData/000_Harmony`)
 - Python 3.11+
-- An MCP-capable model client (Claude Code, pi, or any other), which decides the model.
+- An MCP-capable model client, which decides the model.
 
 ASTRA finds KSP through Steam's `libraryfolders.vdf` and a running `KSP_x64.exe`. Set
 `ASTRA_KSP_DIR` to override discovery.

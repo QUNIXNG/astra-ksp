@@ -64,7 +64,7 @@ ASTRA 换了条路：把正在运行的 KSP 变成 **74 个 MCP 工具**，交�
 - Windows 和 **Kerbal Space Program 1.12.5**
 - **kRPC 0.8.0**、**MechJeb2**、**ModuleManager**、**Harmony**（`GameData/000_Harmony`）
 - Python 3.11+
-- 一个支持 MCP 的模型客户端（Claude Code、pi 或任何 MCP 客户端都行），模型由客户端决定
+- 一个支持 MCP 的模型客户端，模型由客户端决定
 
 ```bash
 git clone https://github.com/QUNIXNG/astra-ksp.git

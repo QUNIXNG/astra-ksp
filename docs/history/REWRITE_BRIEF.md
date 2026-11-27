@@ -501,7 +501,7 @@ Format for each entry: route, body, return, main-thread timeout, verdict, source
   - `data/knowledge_base/sources.yaml` [port].
   - `skills/craft-design.md:13-59` contract [port].
   - Per-phase skills [rewrite: keep the math and failure markers].
-  - `.claude/agents/ksp-commander-audit.md:17-42` philosophy [rewrite as a critic persona].
+  - the old ksp-commander audit brief, philosophy [rewrite as a critic persona].
   - `astra/interpreter.py:125-176` "flight director" framing [mine for the system prompt].
   - `skills/00-orchestration.md:98-116` "fix one thing per retry" discipline [keep].
 - **Evidence index (commit hashes):** 1b535a2, 1163c4c, c7f2c87, 0c38520, 9156e95, 664f5e5, 64d4aa6, 9938f3a, 007d3af, c621db2, 78bf7e9, 1b809b7, 3ba335f, 15b9d1e, bf046b2, 4a56e1d, 5f72884, 48c28ab.
@@ -509,7 +509,7 @@ Format for each entry: route, body, return, main-thread timeout, verdict, source
 ### 1.10 `advisors/` — optional second model
 - **`llm_cli.call_llm_cli`** [port], branch-only commit 48c28ab.
   - Codex argv: `[codex.exe, 'exec', '--sandbox', 'read-only', '--skip-git-repo-check']`.
-  - Claude argv: `[claude, '-p', '--output-format', 'text']`.
+  - External agent argv: `[<client>, '-p', '--output-format', 'text']`.
   - The prompt goes on STDIN (utf-8).
 - **`codex_review`** [port as optional `second_opinion`], `astra/codex_review.py`: `_resolve_codex_bin` :42-64, `_build_command` (`-i png...`, prompt on stdin) :113-119, `parse_codex_reply` :122-153, `codex_review_three_view` :156-214, 6-point checklist prompt :70-97.
 - **Last-balanced-JSON extractor** from the branch's `interpreter._extract_json` [port].
@@ -1093,7 +1093,7 @@ Backend: **K** = kRPC, **B** = bridge, **P** = pure Python, **F** = local files.
   - LF-only engine on LFO tanks flagged;
   - name and single-line description;
   - no ACTIONGROUPS or STAGES.
-- `render_design(craft)` → PNG + metrics for the AI to look at. `second_opinion(question, images)` → optional Codex/Claude CLI.
+- `render_design(craft)` → PNG + metrics for the AI to look at. `second_opinion(question, images)` → optional external agent CLI.
 
 **Build**
 - `craft_write(craft, save=None)` → path in the ACTIVE save's `Ships/VAB` — P+B

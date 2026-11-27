@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "astra-ksp"
-version = "2.0.0"
+version = "2.1.0"
 description = "Mission control for Kerbal Space Program 1: an AI flies the whole mission live through tools — it designs, builds, launches and pilots the rocket, computing every decision from telemetry."
 readme = "README.en.md"
 requires-python = ">=3.11"
