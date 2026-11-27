@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -55,6 +56,52 @@ def _tools_markdown() -> str:
     return "\n".join(lines) + "\n"
 
 
+def _type_name(ann: Any) -> str:
+    """A readable name for a type hint, without the ``typing.`` noise."""
+    import typing
+
+    if ann is inspect.Parameter.empty or ann is Any:
+        return "any"
+    if ann is type(None):
+        return "None"
+    if typing.get_origin(ann) is typing.Union:
+        return " | ".join(_type_name(a) for a in typing.get_args(ann))
+    if typing.get_origin(ann) is typing.Literal:
+        return "one of " + ", ".join(repr(a) for a in typing.get_args(ann))
+    if isinstance(ann, type):
+        return ann.__name__
+    return str(ann).replace("typing.", "")
+
+
+def _tool_schema(t: Any) -> dict:
+    """Everything the tool's own signature knows: names, types, defaults and field descriptions."""
+    import typing
+
+    hints = typing.get_type_hints(t.fn, include_extras=True)
+    params = []
+    for p in t.signature.parameters.values():
+        ann = hints.get(p.name, p.annotation)
+        base = ann
+        desc = ""
+        if typing.get_origin(ann) is typing.Annotated:
+            args = typing.get_args(ann)
+            base = args[0]
+            for m in args[1:]:
+                d = getattr(m, "description", None)
+                if d:
+                    desc = d
+                    break
+        params.append({
+            "name": p.name,
+            "type": _type_name(base),
+            "required": p.default is inspect.Parameter.empty,
+            "default": None if p.default is inspect.Parameter.empty else p.default,
+            "description": desc,
+        })
+    return {"name": t.name, "group": t.group, "needs_game": t.needs_game, "summary": t.summary,
+            "description": (inspect.getdoc(t.fn) or "").strip(), "parameters": params}
+
+
 def cmd_tools(ns: argparse.Namespace) -> int:
     from astra import registry
 
@@ -62,6 +109,19 @@ def cmd_tools(ns: argparse.Namespace) -> int:
         print(_tools_markdown(), end="")
         return 0
     tools = registry.load_all()
+    if getattr(ns, "name", None):
+        t = tools.get(ns.name)
+        if t is None:
+            print(f"no tool named {ns.name!r}", file=sys.stderr)
+            return 2
+        tools = {ns.name: t}
+    if getattr(ns, "json", False):
+        payload = [_tool_schema(t) for g in registry.GROUPS for t in tools.values() if t.group == g] \
+            if not ns.name else [_tool_schema(t) for t in tools.values()]
+        if ns.group:
+            payload = [p for p in payload if p["group"] == ns.group]
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return 0
     for group, blurb in registry.GROUPS.items():
         if ns.group and group != ns.group:
             continue
@@ -260,6 +320,8 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("tools", help="list tools")
     s.add_argument("group", nargs="?", help="only this group")
     s.add_argument("-v", "--verbose", action="store_true", help="print full descriptions")
+    s.add_argument("--json", action="store_true", help="machine-readable schema: types, defaults, field descriptions")
+    s.add_argument("-n", "--name", default=None, help="only this tool (pair with --json for one schema)")
     s.add_argument("--markdown", action="store_true", help="print the full reference as Markdown (docs/TOOLS.md)")
     s.set_defaults(func=cmd_tools)
 

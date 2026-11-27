@@ -1080,6 +1080,23 @@ def test_nodes_create_list_delete(k):
     assert call("node_create", ut=1300.0, prograde_mps=1.0, normal_mps=0.0, radial_mps=0.0)["burn"]["burn_time_s"] is None
 
 
+def test_node_create_refuses_a_burn_that_drifted_from_its_plan(k, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from astra import plans
+
+    monkeypatch.setattr(plans, "CONFIG", SimpleNamespace(cache_dir=tmp_path))
+    v = fly_vessel(k, Vessel("Ship"))
+    v.available_thrust, v.specific_impulse, v.mass = 200e3, 300.0, 10e3
+    pid = plans.remember("node_search", 1500.0, 100.0, 0.0, 0.0, dv_mps=100.0)
+    out = call("node_create", ut=1500.0, prograde_mps=100.0, normal_mps=0.0, radial_mps=0.0, plan=pid)
+    assert out["plan"]["id"] == pid and out["plan"]["kind"] == "node_search"
+    with pytest.raises(AstraError) as exc:  # a mistyped digit cannot quietly become a different burn
+        call("node_create", ut=1500.0, prograde_mps=140.0, normal_mps=0.0, radial_mps=0.0, plan=pid)
+    assert "prograde" in exc.value.message and "planned" in exc.value.message
+    assert len(call("node_list")["nodes"]) == 1  # the refused call left no node behind
+
+
 def test_target_set_body_vessel_and_clear(k):
     v = fly_vessel(k, Vessel("Chaser"))
     t = Vessel("Station 空间站")

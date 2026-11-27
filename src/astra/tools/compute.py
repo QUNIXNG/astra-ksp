@@ -25,6 +25,7 @@ from typing import Annotated, Any, Iterator, Literal
 from pydantic import ConfigDict, Field, with_config
 from typing_extensions import TypedDict
 
+from astra import plans
 from astra.config import CONFIG
 from astra.errors import AstraError, NotConnected
 from astra.ksp import KSP, ksp
@@ -238,6 +239,15 @@ def _terrain_warning(b: Body, alt: float, what: str) -> str | None:
 def _need(cond: bool, message: str, hint: str | None = None) -> None:
     if not cond:
         raise AstraError(message, hint)
+
+
+def _node_args(ut: float, prograde: float, normal: float, radial: float) -> dict:
+    """The four numbers node_create takes, returned ready to pass through unchanged.
+
+    Copied out of a result by hand, four floats are four chances to put the burn somewhere else; the
+    plan id catches that at ignition, but not retyping it at all is better.
+    """
+    return {"ut": ut, "prograde_mps": prograde, "normal_mps": normal, "radial_mps": radial}
 
 
 def _finite(**values: Any) -> None:
@@ -493,15 +503,16 @@ def compute_rocket(
 @tool("compute", needs_game=False)
 def compute_descent(
     body: BodyArg,
-    altitude_m: Annotated[float, Field(description="Height above the terrain directly below, m (telemetry surface_altitude minus your CoM-to-landing-legs offset).")],
-    vertical_speed_mps: Annotated[float, Field(description="Vertical speed, m/s, positive UP (descending = negative), as telemetry reports it.")],
-    horizontal_speed_mps: Annotated[float, Field(description="Surface-relative horizontal speed, m/s.")],
-    mass_t: Annotated[float, Field(description="Current mass, t.")],
-    thrust_kn: Annotated[float, Field(description="Full thrust of the engines you will brake with, kN, at the local pressure.")],
+    altitude_m: Annotated[float | None, Field(description="Height above the terrain directly below, m (telemetry surface_altitude minus your CoM-to-landing-legs offset).")] = None,
+    vertical_speed_mps: Annotated[float | None, Field(description="Vertical speed, m/s, positive UP (descending = negative), as telemetry reports it.")] = None,
+    horizontal_speed_mps: Annotated[float | None, Field(description="Surface-relative horizontal speed, m/s.")] = None,
+    mass_t: Annotated[float | None, Field(description="Current mass, t.")] = None,
+    thrust_kn: Annotated[float | None, Field(description="Full thrust of the engines you will brake with, kN, at the local pressure.")] = None,
     isp_s: Annotated[float | None, Field(description="Isp of those engines, s; include to account for mass loss (else constant mass, conservative).")] = None,
     throttle: Annotated[float | None, Field(description="Fraction of full thrust you plan to brake with (your control margin), 0-1. Omit for full thrust: the physical limit.")] = None,
     reaction_time_s: Annotated[float | None, Field(description="Seconds of lag you allow between deciding and full thrust (added as fall distance). Omit for zero.")] = None,
     terrain_height_m: Annotated[float | None, Field(description="Height of the terrain below you above sea level, m (telemetry altitude minus surface altitude); sets the local gravity. Omit to take gravity at sea level + altitude_m (slightly high over high ground, i.e. conservative).")] = None,
+    from_telemetry: Annotated[bool, Field(description="Read the measured inputs off the live vessel instead of the call. Anything you pass explicitly still wins, and `inputs` echoes every number used with where it came from.")] = False,
 ) -> dict:
     """Braking calculator for a powered landing: suicide-burn height and timing, hover throttle, feasibility.
 
@@ -514,6 +525,34 @@ def compute_descent(
     """
     with _bodies() as book:
         b = book.get(body)
+    fields: dict[str, Any] = {"altitude_m": altitude_m, "vertical_speed_mps": vertical_speed_mps,
+                              "horizontal_speed_mps": horizontal_speed_mps, "mass_t": mass_t, "thrust_kn": thrust_kn,
+                              "isp_s": isp_s, "terrain_height_m": terrain_height_m}
+    given = dict(fields)
+    sources = {name: "call" for name, val in given.items() if val is not None}
+    snap_ut = None
+    if from_telemetry:
+        from astra import telemetry
+
+        snap = telemetry.snapshot("brief")
+        snap_ut = snap.get("ut")
+        pos, vel, prop = snap["position"], snap["velocity"], snap["propulsion"]
+        alt, s_alt = pos.get("altitude_m"), pos.get("surface_altitude_m")
+        measured = {"altitude_m": s_alt, "vertical_speed_mps": vel.get("vertical_mps"),
+                    "horizontal_speed_mps": vel.get("horizontal_mps"), "mass_t": prop.get("mass_t"),
+                    "thrust_kn": prop.get("available_thrust_kn"), "isp_s": prop.get("isp_s"),
+                    "terrain_height_m": None if alt is None or s_alt is None else alt - s_alt}
+        for name, val in fields.items():
+            if val is None and measured.get(name) is not None:
+                fields[name] = measured[name]
+                sources[name] = "telemetry"
+        altitude_m, vertical_speed_mps, horizontal_speed_mps = fields["altitude_m"], fields["vertical_speed_mps"], fields["horizontal_speed_mps"]
+        mass_t, thrust_kn = fields["mass_t"], fields["thrust_kn"]
+        isp_s, terrain_height_m = fields["isp_s"], fields["terrain_height_m"]
+    missing = [name for name in ("altitude_m", "vertical_speed_mps", "horizontal_speed_mps", "mass_t", "thrust_kn")
+               if fields[name] is None]
+    _need(not missing, f"missing {', '.join(missing)}",
+          "pass them, or from_telemetry=True to read them off the live vessel")
     for name, val in (("altitude_m", altitude_m), ("vertical_speed_mps", vertical_speed_mps),
                       ("horizontal_speed_mps", horizontal_speed_mps), ("mass_t", mass_t), ("thrust_kn", thrust_kn),
                       ("isp_s", isp_s), ("reaction_time_s", reaction_time_s), ("terrain_height_m", terrain_height_m)):
@@ -534,7 +573,11 @@ def compute_descent(
     g = rocket.gravity_at(b.mu, r_craft)
     twr_full = rocket.twr(f_full, m, g)
     out: dict[str, Any] = {"body": b.name, "gravity_mps2": g, "twr_full": twr_full, "twr_planned": twr_full * frac,
-                           "hover_throttle": rocket.hover_throttle(f_full, m, g)}
+                           "hover_throttle": rocket.hover_throttle(f_full, m, g),
+                           "inputs": {**{name: fields[name] for name in ("altitude_m", "vertical_speed_mps",
+                                                                         "horizontal_speed_mps", "mass_t", "thrust_kn",
+                                                                         "isp_s", "terrain_height_m")},
+                                      "sources": sources, "from_telemetry": from_telemetry, "telemetry_ut": snap_ut}}
     descending = -min(0.0, vertical_speed_mps)
     if descending > 0:
         try:
@@ -990,7 +1033,9 @@ def compute_maneuver(
             notes.append(f"the game ran {lv.trial.ticked_s:.2f} s (real time) to refresh KSP's prediction; "
                          "the pause state was restored")
         dv = math.sqrt(pro * pro + nor * nor + rad * rad)
-        return {"kind": kind, "ut": p_ut, "time_to_s": p_ut - lv.now, "prograde_mps": pro, "normal_mps": nor,
+        pid = plans.remember(kind, p_ut, pro, nor, rad, dv_mps=round(dv, 4))
+        return {"kind": kind, "plan": pid, "node_create_args": _node_args(p_ut, pro, nor, rad),
+                "ut": p_ut, "time_to_s": p_ut - lv.now, "prograde_mps": pro, "normal_mps": nor,
                 "radial_mps": rad, "dv_mps": dv, **_burn(lv.vessel, dv),
                 "predicted": {"model": plan.pop("model", {}), "ksp": ksp_pred,
                               **({"ksp_check": ksp_check} if ksp_check is not None else {})},
@@ -1174,11 +1219,20 @@ def _plan_plane_change(lv: _Live, *, at: str, t0: float, target: str | None,
                     "normal = ±v_h sinθ, prograde/radial = v_h(cosθ-1) split by the flight-path angle"}
 
 
+# Hohmann phasing degrades quickly off-circular; above this the answer should not be trusted at all.
+_HOHMANN_MAX_ECC = 0.05
+
+
 def _plan_hohmann_to_body(lv: _Live, *, t0: float, target: str, **_: Any) -> dict:
     kind, tgt = _resolve_target(lv.k, target)
     _need(kind == "body", f"{target} is a vessel", "hohmann_to_body targets a moon or planet; use a node search for vessels")
     _need(tgt.orbit is not None and tgt.orbit.body == lv.body, f"{tgt.name} does not orbit {lv.body.name}",
           "use compute_transfer_window for a body around a different parent")
+    # The Hohmann model solves phasing for a near-circular parking orbit; on a clearly elliptical one it returns a
+    # confidently wrong number (a 100x11406 km orbit yielded -0.05 m/s with no encounter). Refuse instead.
+    _need(lv.craft.e <= _HOHMANN_MAX_ECC, f"parking orbit eccentricity {lv.craft.e:.3f} is too high for the Hohmann model",
+          "hohmann_to_body assumes a near-circular parking orbit; use compute_node_search with "
+          "objective {encounter_body: ..., target_periapsis_m: ..., minimize: 'dv'} and let it place the burn")
     moon = _krpc_axes(_kepler_of(tgt.orbit))
     plan = _physics(orbits.plan_transfer_to_satellite, lv.mu, lv.state, moon, t0)
     notes = []
@@ -1351,7 +1405,11 @@ def compute_node_search(
         if lv.trial.ticked_s > 0:
             notes.append(f"the game ran {lv.trial.ticked_s:.2f} s (real time) to refresh KSP's predictions; "
                          "the pause state was restored")
+        pid = plans.remember("node_search", vals["ut"], vals["prograde"], vals["normal"], vals["radial"],
+                             dv_mps=round(dv, 4))
         return {
+            "plan": pid,
+            "node_create_args": _node_args(vals["ut"], vals["prograde"], vals["normal"], vals["radial"]),
             "best": {"ut": vals["ut"], "time_to_s": vals["ut"] - lv.now,
                      **{f"{c}_mps": vals[c] for c in _COMPONENTS}, "dv_mps": dv, **_burn(lv.vessel, dv)},
             "objective_met": result["met"], "scored_patch": result.get("scored"), "encounter": result.get("encounter"),

@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.2.0 — 2026-11-28
+
+- **`hohmann_to_body` refuses an eccentric parking orbit:** above e=0.05 the tool now raises instead
+  of answering, because the model assumes a near-circular orbit. The burn it used to recommend for
+  a 100 km × 11,406 km orbit came out at +2.6 m/s and went nowhere, and nothing in the result said
+  the answer was meaningless. The hint points at `compute_node_search` with an `encounter_body`
+  objective, which does solve that case. Between e=0.01 and e=0.05 the answer still comes back with
+  an `eccentricity` note.
+- **A plan id ties a burn to the computation that chose it:** `compute_maneuver` and
+  `compute_node_search` return a `plan` id, and `node_create`/`fly_burn` take it as `plan=`. The node
+  is compared against the plan **at ignition** — a node edited during a long coast, or a digit typed
+  by hand, refuses to burn instead of quietly going somewhere else. Tolerances are 0.05 m/s and 1 s,
+  and recomputing the same plan yields the same id. Calls without `plan=` behave as before. `node_create`
+  validates before adding the node, so a refused call leaves nothing behind.
+- **`compute_descent` can fill itself in:** `from_telemetry=True` reads altitude, vertical and
+  horizontal speed, mass and thrust off the live vessel instead of making the caller copy five
+  numbers that go stale. Explicit arguments still win, and the result echoes every input with
+  `inputs.sources` saying which came from where. A telemetry pass that cannot supply all five
+  refuses to compute rather than guessing a mass.
+- **`cut`/`off`/`zero` are understood as throttle specs:** `fly_until(throttle="cut")` died with
+  `cannot read throttle spec 'cut'` in two logged missions; they now mean 0, the same as the number.
+- **`astra tools --json`:** prints the catalog as JSON — name, group, summary and every parameter
+  with its type, required flag, default and description — for pasting a tool surface into another
+  model. `-n/--name` shows one tool.
+- **The approach law shuts down when its metric disappears:** a null or NaN metric used to return
+  full throttle, which is burning blind with nothing to aim at. It now cuts the throttle and says
+  so in `done()`. An infinite metric (apoapsis while still escaping) still burns, since that is the
+  side the capture is approaching from.
+- **`node_create_args` on compute results:** `compute_maneuver` and `compute_node_search` also return
+  the four numbers `node_create` takes, in that exact shape, so they pass through without being
+  retyped. The plan id catches a wrong burn at ignition; not copying four floats by hand is what
+  keeps it from going wrong in the first place.
+
 ## 2.1.0 — 2026-11-28
 
 - **kRPC 0.8.0 (protocol v2):** the mod, the Python client and the pinned dependency move to 0.8.0

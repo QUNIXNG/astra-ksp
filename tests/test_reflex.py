@@ -374,6 +374,18 @@ def test_approach_law_feathers_and_finishes():
     assert law.done(None, {}) is not None
 
 
+def test_approach_law_cuts_throttle_when_the_metric_disappears():
+    """A null metric used to mean "full throttle", which is burning blind."""
+    law = laws.ApproachThrottle("apoapsis_altitude", 80000, feather_s=4.0, lo=0.02, hi=1.0)
+    law.start(None, {"apoapsis_altitude": 70000})
+    law.update(None, {"apoapsis_altitude": 70500, "ut": 1.0, "throttle": 1.0})
+    assert law.update(None, {"apoapsis_altitude": None, "ut": 2.0, "throttle": 1.0}) == 0.0
+    assert law.update(None, {"apoapsis_altitude": float("nan"), "ut": 3.0, "throttle": 1.0}) == 0.0
+    assert law.done(None, {}) is not None and "throttle cut" in law.done(None, {})
+    # ... and it stays cut: no resume from a stale rate once the value comes back
+    assert law.update(None, {"apoapsis_altitude": 70500, "ut": 4.0, "throttle": 0.0}) == 1.0
+
+
 def test_pitch_program_interpolates():
     p = laws.PitchProgram([[0, 90], [10000, 45], [40000, 0]], heading=90)
     assert p.pitch_at(-5) == 90

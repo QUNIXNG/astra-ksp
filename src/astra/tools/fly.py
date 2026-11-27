@@ -119,6 +119,9 @@ def fly_burn(
     remove_node: Annotated[bool, Field(description="Delete the node after the burn.")] = True,
     max_axis_offset_deg: Annotated[float, Field(description="Refuse to burn if the control part's forward "
                                                 "axis is further than this from the engines' thrust axis.")] = 10.0,
+    plan: Annotated[str | None, Field(description=(
+        "Plan id returned by the compute_* tool that chose this burn. The node is compared against it at "
+        "ignition; a node edited since planning refuses to burn instead of silently going somewhere else."))] = None,
 ) -> dict:
     """Execute a maneuver node: warp near it, align, burn with a feathered cutoff, and report.
 
@@ -137,7 +140,7 @@ def fly_burn(
                               align_deg=align_deg, max_late_s=max_late_s, align_margin_s=align_margin_s,
                               feather_s=feather_s, min_throttle=min_throttle, tolerance_mps=tolerance_mps,
                               trim_mps=trim_mps, auto_stage=auto_stage, stop_when=stop_when,
-                              remove_node=remove_node, max_axis_offset_deg=max_axis_offset_deg)
+                              remove_node=remove_node, max_axis_offset_deg=max_axis_offset_deg, plan=plan)
 
 
 @tool("fly")

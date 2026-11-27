@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from astra import plans
 from astra.errors import AstraError
 from astra.ksp import ksp
 from astra.reflex import vec
@@ -114,7 +115,7 @@ def burn_time_s(mass_kg: float, thrust_n: float, isp_s: float, dv: float) -> flo
 def execute_node(*, node_index: int, max_throttle: float, lead_fraction: float, align_deg: float,
                  max_late_s: float, align_margin_s: float, feather_s: float, min_throttle: float,
                  tolerance_mps: float, trim_mps: float, auto_stage: Any, stop_when: list[dict] | None,
-                 remove_node: bool, max_axis_offset_deg: float) -> dict:
+                 remove_node: bool, max_axis_offset_deg: float, plan: str | None = None) -> dict:
     k = ksp()
     k.require_flight()
     v = k.vessel()
@@ -123,6 +124,13 @@ def execute_node(*, node_index: int, max_throttle: float, lead_fraction: float, 
         raise AstraError(f"there is no maneuver node {node_index} ({len(nodes)} planned)",
                          "create one with node_create (compute it first with compute_maneuver)")
     node = nodes[node_index]
+    if plan is not None:
+        # Checked here, not at the call site: the point is to catch a node that changed between planning and
+        # ignition, which is exactly what a check at the start of a long coast would miss.
+        drift = plans.mismatch(plan, ut=node.ut, prograde=node.prograde, normal=node.normal, radial=node.radial)
+        if drift:
+            raise AstraError(drift, "the node is not what was planned (edited since, or the wrong plan id): "
+                                    "re-plan with compute_* and node_create, or drop plan= to burn what is there")
     dv = node.remaining_delta_v
     thrust = v.available_thrust * max_throttle
     isp = v.specific_impulse or v.vacuum_specific_impulse
@@ -139,6 +147,8 @@ def execute_node(*, node_index: int, max_throttle: float, lead_fraction: float, 
     sc = k.sc
     report: dict[str, Any] = {"node_dv_mps": dv, "burn_time_est_s": bt, "start_ut": start_ut,
                               "thrust_axis_offset_deg": offset}
+    if plan is not None:
+        report["plan"] = plans.describe(plan) or plan
 
     # Warp close to the start (the burn itself never runs under warp).
     lead_needed = align_margin_s

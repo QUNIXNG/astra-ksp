@@ -233,6 +233,67 @@ def test_descent_tool_mun(offline):
     assert weak["feasible"] is False
 
 
+def test_plan_id_ties_a_burn_to_the_computation(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from astra import plans
+
+    monkeypatch.setattr(plans, "CONFIG", SimpleNamespace(cache_dir=tmp_path))
+    pid = plans.remember("hohmann_to_body", 1000.0, 856.4, 0.0, 0.0, dv_mps=856.4)
+    assert len(pid) == 8
+    assert plans.make_id("hohmann_to_body", 1000.0, 856.4, 0.0, 0.0) == pid  # the same plan recomputed is the same id
+    assert plans.mismatch(pid, ut=1000.0, prograde=856.4, normal=0.0, radial=0.0) is None
+    assert plans.mismatch(pid, ut=1000.4, prograde=856.42, normal=0.0, radial=0.0) is None  # rounding is not drift
+    drift = plans.mismatch(pid, ut=1000.0, prograde=856.4, normal=5.0, radial=0.0)
+    assert drift and "normal" in drift and "planned" in drift
+    assert "not in the local cache" in plans.mismatch("deadbeef", ut=0.0, prograde=0.0, normal=0.0, radial=0.0)
+
+
+def test_compute_maneuver_returns_a_plan_id(offline, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from astra import plans
+
+    monkeypatch.setattr(plans, "CONFIG", SimpleNamespace(cache_dir=tmp_path))
+    game = make_game(monkeypatch, a=R_K + 80_000, e=0.0, mean_anomaly_at_epoch=0.3, epoch=0.0)
+    out = call("compute_maneuver", kind="hohmann_to_body", target="Mun")
+    assert out["plan"] == plans.make_id("hohmann_to_body", out["ut"], out["prograde_mps"], out["normal_mps"],
+                                        out["radial_mps"])
+    assert plans.mismatch(out["plan"], ut=out["ut"], prograde=out["prograde_mps"], normal=out["normal_mps"],
+                          radial=out["radial_mps"]) is None
+    # the four numbers come back in the shape node_create takes, so nobody retypes them
+    a = out["node_create_args"]
+    assert a == {"ut": out["ut"], "prograde_mps": out["prograde_mps"],
+                 "normal_mps": out["normal_mps"], "radial_mps": out["radial_mps"]}
+    assert_clean(game)
+
+
+def test_descent_from_telemetry_fills_and_echoes_inputs(offline, monkeypatch):
+    from astra import telemetry
+
+    snap = {"ut": 1234.5, "position": {"altitude_m": 203_200.0, "surface_altitude_m": 3_200.0},
+            "velocity": {"vertical_mps": -40.0, "horizontal_mps": 200.0},
+            "propulsion": {"mass_t": 4.0, "available_thrust_kn": 60.0, "isp_s": 320.0}}
+    monkeypatch.setattr(telemetry, "snapshot", lambda detail="brief": snap)
+    out = call("compute_descent", body="Mun", from_telemetry=True)
+    assert out["inputs"]["altitude_m"] == 3_200.0
+    assert out["inputs"]["terrain_height_m"] == pytest.approx(200_000.0)
+    assert out["inputs"]["mass_t"] == 4.0 and out["inputs"]["thrust_kn"] == 60.0
+    assert out["inputs"]["telemetry_ut"] == 1234.5
+    assert all(src == "telemetry" for src in out["inputs"]["sources"].values())
+    # what you say explicitly still wins, and the result says which number came from where
+    out2 = call("compute_descent", body="Mun", from_telemetry=True, vertical_speed_mps=-10.0)
+    assert out2["inputs"]["vertical_speed_mps"] == -10.0
+    assert out2["inputs"]["sources"]["vertical_speed_mps"] == "call"
+    assert out2["inputs"]["sources"]["mass_t"] == "telemetry"
+    # a reading the vessel cannot give is reported, not silently zeroed
+    blind = {**snap, "propulsion": {**snap["propulsion"], "mass_t": None}}
+    monkeypatch.setattr(telemetry, "snapshot", lambda detail="brief": blind)
+    with pytest.raises(AstraError) as exc:
+        call("compute_descent", body="Mun", from_telemetry=True)
+    assert "mass_t" in exc.value.message
+
+
 def test_ascent_estimate_brackets_known_costs(offline):
     kerbin = call("compute_ascent_estimate", body="Kerbin", orbit_alt_m=80_000)
     lo, hi = kerbin["estimate_band_mps"]
@@ -546,6 +607,23 @@ def test_hohmann_to_body_and_errors_leave_no_node(offline, monkeypatch):
     assert_clean(game)
     with pytest.raises(AstraError):
         call("compute_maneuver", kind="hohmann_to_body", target="Kerbin")
+    assert_clean(game)
+
+
+def test_hohmann_to_body_refuses_elliptical_parking_orbit(offline, monkeypatch):
+    # phasing assumes near-circular; on a 100 x 11406 km orbit the model returned -0.05 m/s with no encounter,
+    # which reads like a valid answer. It has to refuse and point at the node search instead.
+    game = make_game(monkeypatch, a=6_352_500.0, e=0.8898, mean_anomaly_at_epoch=0.3, epoch=1000.0)
+    with pytest.raises(AstraError) as exc:
+        call("compute_maneuver", kind="hohmann_to_body", target="Mun")
+    assert "eccentricity 0.890" in exc.value.message
+    assert "compute_node_search" in exc.value.hint
+    assert_clean(game)
+    # a slightly eccentric orbit still gets the answer, with the caveat attached
+    game = make_game(monkeypatch, a=R_K + 80_000, e=0.02, mean_anomaly_at_epoch=0.3, epoch=0.0)
+    out = call("compute_maneuver", kind="hohmann_to_body", target="Mun")
+    assert 780 < out["prograde_mps"] < 900  # still an answer; the exact figure moves with where you are in the orbit
+    assert any("eccentricity" in n for n in out["notes"])
     assert_clean(game)
 
 

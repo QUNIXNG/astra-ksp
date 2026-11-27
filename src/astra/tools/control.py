@@ -11,6 +11,7 @@ from typing import Annotated, Any, Iterable, Literal
 
 from pydantic import Field
 
+from astra import plans
 from astra.errors import AstraError
 from astra.ksp import ksp
 from astra.registry import tool
@@ -773,6 +774,7 @@ def node_create(
     prograde_mps: Annotated[float, Field(description="Δv along prograde, m/s (negative = retrograde).")],
     normal_mps: Annotated[float, Field(description="Δv along the orbit normal, m/s (negative = antinormal).")],
     radial_mps: Annotated[float, Field(description="Δv radial-out, m/s (negative = radial-in).")],
+    plan: Annotated[str | None, Field(description="Plan id from a compute_* result. The node is refused unless these numbers are that plan, so a mistyped digit cannot quietly become a different burn.")] = None,
 ) -> dict:
     """Place a maneuver node and report KSP's predicted result (orbit after, encounters/escapes).
 
@@ -785,12 +787,19 @@ def node_create(
     now = k.sc.ut
     if ut <= now:
         raise AstraError(f"ut {ut:.1f} is not in the future (now {now:.1f})", "add the time until the burn point to now")
+    if plan is not None:
+        drift = plans.mismatch(plan, ut=ut, prograde=prograde_mps, normal=normal_mps, radial=radial_mps)
+        if drift:
+            raise AstraError(drift, "re-run the compute_* tool that produced this plan and use its numbers, "
+                                    "or drop plan= to place the node as given")
     node = v.control.add_node(ut, prograde=prograde_mps, normal=normal_mps, radial=radial_mps)
     nodes = v.control.nodes
     index = next((i for i, n in enumerate(nodes) if n == node), len(nodes) - 1)
     out = node_info(node, index, now)
     out["burn"] = burn_estimate(v, node.delta_v)
     out["node_count"] = len(nodes)
+    if plan is not None:
+        out["plan"] = plans.describe(plan) or plan
     return out
 
 

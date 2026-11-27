@@ -186,15 +186,16 @@ time. Flat ground, no drag, uniform gravity: add your own terrain and control ma
 | parameter | required | description |
 |---|---|---|
 | `body` | yes | Celestial body name as KSP spells it, e.g. 'Kerbin', 'Mun', 'Duna' (case-insensitive). |
-| `altitude_m` | yes | Height above the terrain directly below, m (telemetry surface_altitude minus your CoM-to-landing-legs offset). |
-| `vertical_speed_mps` | yes | Vertical speed, m/s, positive UP (descending = negative), as telemetry reports it. |
-| `horizontal_speed_mps` | yes | Surface-relative horizontal speed, m/s. |
-| `mass_t` | yes | Current mass, t. |
-| `thrust_kn` | yes | Full thrust of the engines you will brake with, kN, at the local pressure. |
+| `altitude_m` | no | Height above the terrain directly below, m (telemetry surface_altitude minus your CoM-to-landing-legs offset). |
+| `vertical_speed_mps` | no | Vertical speed, m/s, positive UP (descending = negative), as telemetry reports it. |
+| `horizontal_speed_mps` | no | Surface-relative horizontal speed, m/s. |
+| `mass_t` | no | Current mass, t. |
+| `thrust_kn` | no | Full thrust of the engines you will brake with, kN, at the local pressure. |
 | `isp_s` | no | Isp of those engines, s; include to account for mass loss (else constant mass, conservative). |
 | `throttle` | no | Fraction of full thrust you plan to brake with (your control margin), 0-1. Omit for full thrust: the physical limit. |
 | `reaction_time_s` | no | Seconds of lag you allow between deciding and full thrust (added as fall distance). Omit for zero. |
 | `terrain_height_m` | no | Height of the terrain below you above sea level, m (telemetry altitude minus surface altitude); sets the local gravity. Omit to take gravity at sea level + altitude_m (slightly high over high ground, i.e. conservative). |
+| `from_telemetry` | no | Read the measured inputs off the live vessel instead of the call. Anything you pass explicitly still wins, and `inputs` echoes every number used with where it came from. |
 
 ### `compute_ascent_estimate`
 
@@ -351,7 +352,9 @@ bottom, the stage table in firing order (what each stage activates and drops, wi
 Δv in vacuum and at the chosen pressure, burn time, thrust, Isp, and TWR at stage start/end on
 the body), totals, and warnings (diameter steps, empty radial decouplers, unreachable propellant,
 LF-only engines on LF/Ox tanks, drop tanks without crossfeed, separators sharing a stage, thrust
-limiters, no control source, launch TWR < 1). Spec problems raise an error listing every issue.
+limiters, no control source, launch TWR < 1, and on anything with landing legs the touchdown
+geometry: tip-over margin, an engine bell hanging below the feet, and a hatch that opens onto a
+shelf or onto a heat shield). Spec problems raise an error listing every issue.
 Stage numbers are KSP's inverse stages: the highest fires first, 0 last.
 
 | parameter | required | description |
@@ -418,6 +421,8 @@ Load a save game (works from the main menu) and wait until kRPC answers in the n
 
 Goes through the bridge (kRPC cannot switch save folders). Loading takes tens of seconds.
 Returns the scene, UT and active vessel. In flight the game is then paused for deliberation.
+The loaded game is written back as `persistent.sfs` before the scene starts; the result includes
+`persistent_save_overwritten` so the caller can record this explicitly.
 
 | parameter | required | description |
 |---|---|---|
@@ -474,7 +479,7 @@ paused on the pad for deliberation.
 | `craft` | yes | Craft name as saved in this save's Ships/VAB or Ships/SPH (craft_list shows them; tolerant matching). |
 | `site` | yes | Launch site: 'LaunchPad' or 'Runway', or another site KSP offers (an unknown name lists them). |
 | `crew` | yes | Kerbal names to seat, e.g. ['Jebediah Kerman']. [] lets KSP assign its default crew (probes need none). Use crew_roster to see who is available. |
-| `recover_site` | no | Default false. Set true to recover a vessel already on the site before launching; otherwise the launch is refused with the blocker's name. |
+| `recover_site` | no | If true, recover vessels already sitting on the launch site before launching. Default false: refuses instead, so an old craft is never silently removed. |
 
 ### `game_list_vessels`
 
@@ -643,6 +648,7 @@ engines. Use compute_* tools to choose the numbers; iterate by deleting and re-c
 | `prograde_mps` | yes | Δv along prograde, m/s (negative = retrograde). |
 | `normal_mps` | yes | Δv along the orbit normal, m/s (negative = antinormal). |
 | `radial_mps` | yes | Δv radial-out, m/s (negative = radial-in). |
+| `plan` | no | Plan id from a compute_* result. The node is refused unless these numbers are that plan, so a mistyped digit cannot quietly become a different burn. |
 
 ### `node_list`
 
@@ -723,11 +729,12 @@ node_create; check the predicted result with orbit_info before burning.
 | `feather_s` | no | Start throttling down when the remaining Δv is less than this many seconds of full acceleration. |
 | `min_throttle` | no | Throttle floor while feathering. |
 | `tolerance_mps` | no | Cut off when the remaining Δv is below this. |
-| `trim_mps` | no | If a `stop_when` trigger (or an early cutoff) leaves up to this much Δv on the node, finish it with one feathered trim burn instead of stopping a few m/s short. 0 disables the trim. |
+| `trim_mps` | no | If a stop_when trigger (or an early cutoff) leaves up to this much Δv on the node, finish it with one feathered trim burn instead of stopping a few m/s short. 0 disables the trim. |
 | `auto_stage` | no | Stage automatically when an engine runs dry? false (default): the reflex stops on flameout and you decide. true or {"enabled": true, "max_stages": n, "min_interval_s": s}: stage on flameout, but only when the next stage lights an engine without dropping propellant, or drops only empty parts while another engine keeps burning; anything else stops the reflex for your decision. |
 | `stop_when` | no | Optional extra stop triggers (same syntax as fly_until.until), e.g. stop an injection burn when next_periapsis_altitude reaches your target even if the node says otherwise. |
 | `remove_node` | no | Delete the node after the burn. |
 | `max_axis_offset_deg` | no | Refuse to burn if the control part's forward axis is further than this from the engines' thrust axis. |
+| `plan` | no | Plan id returned by the compute_* tool that chose this burn. The node is compared against it at ignition; a node edited since planning refuses to burn instead of silently going somewhere else. |
 
 ### `fly_warp`
 
@@ -805,9 +812,10 @@ tool activates the next stage once after MechJeb is engaged, running a moment of
 it (the `ignition` entry says what lit); MechJeb then commands the throttle. The result echoes
 the settings MechJeb accepted (`mechjeb.effective`), and the watch report if watching.
 
-Two guards sit next to the ascent: `launch_site` reports the pad latitude and whether the requested
-inclination is inside it (a dogleg costs dV), and `inclination_check` compares the orbit you ended up
-in against the one you asked for, because a mismatched inclination means a re-launch.
+With `autostage` the flameout interlock defaults to off: MechJeb stages on burnout itself, so the
+moment a spent stage is still attached and its engine reads dry is the gap it stages across, not
+a failure. Armed, that interlock ends the watch between stages and the paused game stops MechJeb
+from ever staging again. Pass `interlocks={"flameout": true}` to keep it.
 
 | parameter | required | description |
 |---|---|---|

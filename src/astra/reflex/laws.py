@@ -87,6 +87,7 @@ class ApproachThrottle(ThrottleLaw):
         self._rate: float | None = None
         self._sign = 0.0
         self._reached = False
+        self._blind = False
 
     def start(self, ctx, m):
         v = m.get(self.metric)
@@ -101,8 +102,17 @@ class ApproachThrottle(ThrottleLaw):
 
     def update(self, ctx, m):
         v, ut, thr = m.get(self.metric), m.get("ut"), m.get("throttle", 0.0)
-        if not _finite(v):
-            self._prev = None  # no rate across an infinite/undefined stretch
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            # The metric stopped having a value mid-flight (scene change, vessel switch, an orbit that no
+            # longer has the apse we were aiming at). There is nothing to aim at any more, so holding the
+            # last throttle would be burning blind. Shut down and let the caller see it as a timeout.
+            self._prev = None
+            self._blind = True
+            return 0.0
+        if isinstance(v, float) and math.isinf(v):
+            # An unbounded metric (apoapsis while still escaping) is the side we approach from, not a
+            # reason to stop: keep burning until it becomes finite.
+            self._prev = None  # no rate across an infinite stretch
             return self.hi
         if (self.target - v) * self._sign <= 0:
             self._reached = True
@@ -119,7 +129,11 @@ class ApproachThrottle(ThrottleLaw):
         return _clamp(eta_full / self.feather_s, self.lo, self.hi)
 
     def done(self, ctx, m):
-        return f"{self.metric} reached {self.target:g}" if self._reached else None
+        if self._reached:
+            return f"{self.metric} reached {self.target:g}"
+        if self._blind:
+            return f"{self.metric} stopped having a value before it reached {self.target:g}; throttle cut"
+        return None
 
 
 class MaxQCap(ThrottleLaw):
@@ -145,7 +159,17 @@ class MaxQCap(ThrottleLaw):
 
 
 def parse_throttle(spec: Any) -> ThrottleLaw:
-    if spec is None or spec == "keep":
+    if isinstance(spec, str):
+        word = spec.strip().lower()
+        if word == "keep":
+            return KeepThrottle()
+        if word in ("cut", "off", "zero"):
+            # Throttle to zero without shutting the engines down: the same thing a number 0 does, spelled the way
+            # people say it.
+            return ConstantThrottle(0.0)
+        raise AstraError(f"cannot read throttle spec {spec!r}",
+                         "use a number 0..1, 'keep', 'cut', or {mode: twr|approach|constant, ...}")
+    if spec is None:
         return KeepThrottle()
     if isinstance(spec, (int, float)) and not isinstance(spec, bool):
         return ConstantThrottle(spec)
@@ -167,7 +191,7 @@ def parse_throttle(spec: Any) -> ThrottleLaw:
             law = MaxQCap(law, float(spec["max_q_pa"]))
         return law
     raise AstraError(f"cannot read throttle spec {spec!r}",
-                     "use a number 0..1, 'keep', or {mode: twr|approach|constant, ...}")
+                     "use a number 0..1, 'keep', 'cut', or {mode: twr|approach|constant, ...}")
 
 
 # ============================================================================================
