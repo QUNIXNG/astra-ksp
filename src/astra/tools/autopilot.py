@@ -599,6 +599,86 @@ def mj_plan(
 
 
 @tool("autopilot")
+def mj_maneuver(
+    operation: Annotated[str, Field(
+        description="The orbit change, as MechJeb's maneuver planner names it: circularize, apoapsis, periapsis, "
+                    "ellipticize, eccentricity, semi_major, inclination, lan, longitude, plane, kill_rel_vel, "
+                    "hohmann, lambert, interplanetary, course_correction, moon_return, resonant_orbit.")],
+    params: Annotated[dict[str, float | int | str | bool], Field(
+        description="Flat operation parameters as the bridge's /mj-plan takes them (e.g. {'timeRef': "
+                    "'apoapsis', 'newApoapsis': 250000}); values must be scalars. Also: planFrom "
+                    "('current' | 'last_node'), target / targetBody for target-relative operations.")],
+    watch: _WATCH,
+    max_game_s: _MAX_GAME_S = None,
+    autowarp: Annotated[bool, Field(default=True, description="Let MechJeb time-warp to the burn.")] = True,
+    lead_time_s: Annotated[float, Field(
+        default=30.0, description="Seconds before the burn start at which MechJeb stops warping and orients.")] = 30.0,
+    autostage: Annotated[bool, Field(
+        default=False, description="Let MechJeb's stager stage during the burn when a stage burns out.")] = False,
+    replace_existing: Annotated[bool, Field(
+        default=False, description="Replace maneuver nodes already in the flight plan instead of refusing.")] = False,
+    stop_when: _STOP_WHEN = None,
+    interlocks: _INTERLOCKS = None,
+) -> dict:
+    """Change an orbit: MechJeb plans the maneuver, then flies it. The default way to move an orbit.
+
+    One call from the intent ("circularize at periapsis", "raise the apoapsis to 250 km", "go to the
+    Mun") to the burn being flown: MechJeb's planner places the node, its executor flies it, and the
+    reply carries the planned node, the burn that came out and the orbit afterwards. Confirm the plan
+    is the one you want before flying it: dry-run it with mj_plan(place=false), or estimate it yourself
+    with compute_maneuver/compute_hohmann (an estimate, not the plan MechJeb will fly).
+
+    `mj_execute_node` re-plans the node with its own solver, so the Δv flown is not necessarily the node
+    that was placed; `node_changed` names the difference. Watch with a max_game_s you estimated
+    yourself: MechJeb acts only while game time runs.
+    """
+    if not operation.strip():
+        raise AstraError("operation is required")
+    if {"operation", "place", "replaceExisting"} & set(params):
+        raise AstraError("params must not repeat 'operation', 'place' or 'replaceExisting'",
+                         "pass replace_existing=true for that instead of params['replaceExisting']")
+    plan = mj_plan(operation=operation, params={**params, "replaceExisting": replace_existing}, place=True)
+    nodes = plan.get("nodes") or []
+    if not nodes:
+        raise AstraError(f"MechJeb planned no node for {operation!r}",
+                         "dry-run it with mj_plan(place=false) and read 'mechjeb': the operation's parameters "
+                         "may not describe a solvable burn from this orbit")
+    runway = nodes[0].get("time_to_s")
+    out: dict[str, Any] = {"operation": operation, "planned_nodes": nodes, "mechjeb_plan": plan.get("mechjeb")}
+    if plan.get("note"):
+        out["plan_note"] = plan["note"]
+    # MechJeb's executor turns toward the node before it will warp, so a node hours away can leave it turning
+    # instead of coasting: the watch then expires with the burn never flown. Say so before that happens.
+    if autowarp and isinstance(runway, (int, float)) and runway > 1800.0:
+        out["far_node"] = (f"the burn is {runway / 3600:.1f} h away: MechJeb orients before it warps, so the watch can "
+                           "expire while it is still turning. Fly it with autowarp=false, warp close first with "
+                           "fly_warp, then execute the node")
+    burned = mj_execute_node(all_nodes=False, autowarp=autowarp, lead_time_s=lead_time_s, autostage=autostage,
+                             watch=watch, max_game_s=max_game_s, stop_when=stop_when, interlocks=interlocks)
+    out["execute"] = burned
+    out["applied_dv_mps"] = sum(n.get("delta_v_mps", 0.0) for n in nodes if n.get("delta_v_mps") is not None)
+    # The plan said where this burn would land: check the orbit that came out against it, so a burn that fell
+    # short or went off-axis is a number in the reply rather than something to notice later.
+    projected = nodes[0].get("orbit_after") or {}
+    actual = burned.get("orbit") or {}
+    if projected and actual:
+        checks = []
+        for key, tol in (("apoapsis_alt_m", 2000.0), ("periapsis_alt_m", 2000.0), ("inclination_deg", 0.5)):
+            want, got = projected.get(key), actual.get(key)
+            if isinstance(want, (int, float)) and isinstance(got, (int, float)):
+                checks.append({"value": key, "expected": round(want, 2), "actual": round(got, 2),
+                               "delta": round(got - want, 2), "tolerance": tol, "ok": abs(got - want) <= tol})
+        if checks:
+            out["orbit_check"] = {"ok": all(c["ok"] for c in checks), "checks": checks}
+            if not out["orbit_check"]["ok"]:
+                out["orbit_check"]["note"] = ("the orbit is not the one the node predicted: MechJeb re-plans the node "
+                                               "it flies, and a burn cut short does the rest. Trim the residual with "
+                                               "another mj_maneuver, or fly the node yourself with fly_burn when the "
+                                               "exact number matters")
+    return out
+
+
+@tool("autopilot")
 def mj_status() -> dict:
     """What MechJeb is doing: which autopilots are engaged and their status text, target, nodes.
 

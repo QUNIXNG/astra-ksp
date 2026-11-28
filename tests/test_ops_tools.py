@@ -503,6 +503,7 @@ def test_tools_registered_with_described_parameters():
 @pytest.mark.parametrize("tool_name,params", [
     ("mj_ascent", ["altitude_m", "inclination_deg", "auto_path", "autostage", "skip_circularization", "limit_aoa", "watch"]),
     ("mj_execute_node", ["all_nodes", "autowarp", "lead_time_s", "autostage", "watch"]),
+    ("mj_maneuver", ["operation", "params", "watch"]),
     ("mj_land", ["targeted", "touchdown_speed_mps", "deploy_gears", "deploy_chutes", "watch"]),
     ("mj_rendezvous", ["target", "desired_distance_m", "max_phasing_orbits", "max_closing_speed_mps", "watch"]),
     ("mj_dock", ["own_port", "target_port", "speed_limit_mps", "force_roll", "override_safe_distance", "watch"]),
@@ -1991,6 +1992,70 @@ def test_checkpoint_scene_from_sidecar_or_save(tmp_path):
     assert game._checkpoint_scene(sfs) == "flight"
     sfs.with_suffix(".astra.json").write_text('{"scene": "space_center"}', encoding="utf-8")
     assert game._checkpoint_scene(sfs) == "space_center"  # the sidecar wins
+
+
+def test_mj_maneuver_plans_and_flies_in_one_call(k, monkeypatch):
+    """The default path for an orbit change: MechJeb plans the node and its executor flies it. The reply has to
+    carry both halves plus a check of the orbit that came out, or the AI is back to trusting a single number."""
+    v = fly_vessel(k, Vessel("Ship"))
+    k.bridge.replies[("GET", "/mj-status")] = {"hasCore": True, "modules": {"node": {"enabled": True}}}
+    k.bridge.replies[("POST", "/mj-execute-node")] = {"executing": True}
+    placed = {}
+
+    def fake_plan(**kw):
+        placed.update(kw)
+        node = v.control.add_node(1600.0, prograde=50.0)
+        return {"operation": kw["operation"], "placed": True, "nodes": [control.node_info(node, 0, 1000.0)]}
+
+    def fake_fly(**kw):
+        v.control.nodes.clear()
+        # 100 km circular, not the 120 km the node predicted
+        k.vessel().orbit = Orbit(v.orbit.body, apoapsis_altitude=100000.0, periapsis_altitude=100000.0)
+        return {"stopped_by": {"kind": "condition", "detail": "mechjeb_done"},
+                "nodes_after": [], "orbit": autopilot._orbit_brief(k.vessel())}
+    monkeypatch.setattr(autopilot, "mj_plan", fake_plan)
+    monkeypatch.setitem(sys.modules, "astra.reflex.engine", types.SimpleNamespace(fly=fake_fly))
+    out = call("mj_maneuver", operation="circularize", params={"timeRef": "periapsis"}, watch=True,
+               max_game_s=600.0, replace_existing=True)
+    assert placed["operation"] == "circularize" and placed["place"] is True
+    assert placed["params"] == {"timeRef": "periapsis", "replaceExisting": True}
+    assert out["planned_nodes"][0]["prograde_mps"] == 50.0
+    assert out["applied_dv_mps"] == pytest.approx(50.0)
+    assert out["execute"]["node_consumed"] is True
+    check = out["orbit_check"]
+    assert check["ok"] is False  # the burn did not produce the orbit the node predicted
+    assert any(c["value"] == "apoapsis_alt_m" and c["ok"] is False for c in check["checks"])
+    assert "re-plans the node" in check["note"]
+
+
+def test_mj_maneuver_refuses_an_operation_mechjeb_cannot_place(k, monkeypatch):
+    fly_vessel(k, Vessel("Ship"))
+    monkeypatch.setattr(autopilot, "mj_plan", lambda **kw: {"nodes": [], "mechjeb": {"state": "no node"}})
+    with pytest.raises(AstraError) as err:
+        call("mj_maneuver", operation="moon_return", params={"target": "Kerbin"}, watch=True, max_game_s=600.0)
+    assert "planned no node" in str(err.value)
+
+
+def test_mj_maneuver_warns_about_a_node_mechjeb_cannot_reach_while_turning(k, monkeypatch):
+    """MechJeb orients before it warps: a node hours away expires the watch with the burn never flown."""
+    v = fly_vessel(k, Vessel("Ship"))
+    node = v.control.add_node(40000.0, prograde=50.0)
+    monkeypatch.setattr(autopilot, "mj_plan",
+                        lambda **kw: {"nodes": [control.node_info(node, 0, 1000.0)]})
+    monkeypatch.setattr(autopilot, "mj_execute_node",
+                        lambda **kw: {"stopped_by": {"kind": "timeout", "detail": "mechjeb never finished"},
+                                      "orbit": {}})
+    out = call("mj_maneuver", operation="hohmann", params={"targetBody": "Mun"}, watch=True, max_game_s=600.0)
+    assert "10.8 h away" in out["far_node"] and "fly_warp" in out["far_node"]
+
+
+def test_mj_maneuver_does_not_take_place_in_params(k, monkeypatch):
+    fly_vessel(k, Vessel("Ship"))
+    for key in ("place", "operation", "replaceExisting"):
+        with pytest.raises(AstraError) as err:
+            call("mj_maneuver", operation="circularize", params={key: True}, watch=False)
+        assert "must not repeat" in str(err.value)
+
 
 
 def test_mj_execute_node_reports_a_node_mechjeb_re_planned(k, monkeypatch):

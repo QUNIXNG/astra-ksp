@@ -117,7 +117,10 @@ extra, optional ones during review) are in the generated `docs/TOOLS.md` (`astra
 - `camera_look(width: int)` — screenshot of the game as an image (kRPC `screenshot`; bridge
   render-to-texture fallback).
 
-**compute** (`tools/compute.py`, pure math in `astra.physics`)
+**compute** (`tools/compute.py`, pure math in `astra.physics`) — estimates, not the flown maneuver
+- Orbit changes are planned and flown by MechJeb (`mj_maneuver`). What is computed here is what a move
+  should cost, and a second number to hold against MechJeb's answer: the two differ, and the difference
+  is the thing worth reading before a burn.
 - `compute_calc(expression, variables)` — safe math evaluator (math functions, constants).
 - `compute_orbit(body, periapsis_alt_m, apoapsis_alt_m, at_alt_m)` — vis-viva speeds, period, SMA.
 - `compute_hohmann(body, from_alt_m, to_alt_m)` — Δv1, Δv2, transfer time, phase angle.
@@ -188,6 +191,9 @@ extra, optional ones during review) are in the generated `docs/TOOLS.md` (`astra
   the 4 s settle after contact and the look-ahead distance are derived inside `astra.reflex.descent`.
 
 **autopilot** (`tools/autopilot.py`) — MechJeb through the bridge; every setting explicit
+- `mj_maneuver(operation, params, watch, ...)` — the default way to change an orbit: MechJeb plans the
+  maneuver and flies it in one call, then reports the planned node, the burn that ran and an
+  `orbit_check` of the orbit that came out against the one the node predicted.
 - `mj_ascent(...)`, `mj_execute_node(...)`, `mj_land(...)`, `mj_rendezvous(...)`, `mj_dock(...)`,
   `mj_plan(operation, params, place)`, `mj_status()`, `mj_abort(modules)`, `mj_stage_stats()`.
   Enabling tools take `watch: bool` + `max_game_s`: when watching, the reflex engine runs hands-off

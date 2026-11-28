@@ -1,6 +1,6 @@
 # Orbital maneuvers: changing an orbit you are already in
 
-Keywords: orbit, orbit change, circularize, circularization, apoapsis, periapsis, apsis change, hohmann, bi-elliptic, plane change, inclination, phasing, maneuver node, node, burn, finite burn, burn time, lead time, fly_burn, mj_execute_node, feather
+Keywords: orbit, orbit change, circularize, circularization, apoapsis, periapsis, apsis change, hohmann, bi-elliptic, plane change, inclination, phasing, maneuver node, node, burn, finite burn, burn time, lead time, estimate, fly_burn, mj_maneuver, mj_execute_node, feather
 
 ## 1. The relations to compute with
 
@@ -49,20 +49,29 @@ A node is an instantaneous impulse; a real burn takes time.
 
 ## 3. The routine
 
-1. Read the orbit (`orbit_info`), mass and thrust of the burning stage (`vessel_stages`).
-2. Compute the maneuver (`compute_maneuver`, `compute_hohmann`, or `compute_node_search` when the
-   result depends on patched conics), create it (`node_create`), and read back the predicted orbit
-   with `orbit_info`/`node_list`. The prediction is KSP's own; it is the thing to trust.
-3. Journal the decision: Δv, burn time, expected orbit, abort condition.
-4. `fly_burn` (it warps to the start minus a margin for turning, aligns, burns, feathers, reports the
-   applied Δv integrated over game time). Or `mj_execute_node` with explicit settings.
-5. Verify: compare the new orbit with the prediction and note the residual. Plan a correction if the
-   error matters; find out why before the next big burn if it is large.
+MechJeb flies the maneuver by default (`mj_maneuver`); what you compute is the estimate you check it
+against. Two numbers that disagree are worth more than one you trust.
 
-Choosing the executor: evidence from earlier flights says MechJeb's node executor drifted ~2°
-off-axis on a long burn under game lag (a big out-of-plane error at Duna) and once skipped a node a
-few minutes away, while a hand-rolled executor once botched a tiny normal-heavy correction that
-MechJeb flew well. Whichever you use, verify the orbit afterwards.
+1. Read the orbit (`orbit_info`), mass and thrust of the burning stage (`vessel_stages`).
+2. Estimate the move: `compute_maneuver`, `compute_hohmann`, or `compute_node_search` when the result
+   depends on patched conics. That is the Δv and burn time you expect to see, not the plan that flies.
+3. Journal the decision: expected Δv, expected orbit, abort condition.
+4. `mj_maneuver(operation, params, watch=true, max_game_s=...)` — MechJeb's planner places the node and
+   its executor flies it; the reply carries the planned node, the burn that ran, and `orbit_check`
+   (the orbit that came out against the one the node predicted). Dry-run the plan first with
+   `mj_plan(place=false)` when you want to see MechJeb's numbers before anything is placed.
+5. Verify and read the residual: `orbit_check` in the reply, then `verify_orbit` against the target
+   you actually wanted. If the error matters, correct it with another `mj_maneuver`; if it is large,
+   find out why before the next big burn.
+
+When to fly the node yourself instead: `mj_execute_node` re-plans the node with its own solver, so the
+number that gets burned is not necessarily the node you placed (the reply names the difference in
+`node_changed`). If an exact node matters — an encounter periapsis, a capture apoapsis, a target
+inclination — place the node from `compute_*` and fly it with `fly_burn`, which reports the applied Δv
+integrated over game time. Evidence from earlier flights: MechJeb's executor drifted ~2° off-axis on a
+long burn under game lag (a big out-of-plane error at Duna) and once skipped a node a few minutes
+away, while ASTRA's executor once botched a tiny normal-heavy correction that MechJeb flew well.
+Whichever you use, verify the orbit afterwards.
 
 ## What goes wrong, and how it shows
 

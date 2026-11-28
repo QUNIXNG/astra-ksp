@@ -362,6 +362,9 @@ def compute_hohmann(
 ) -> dict:
     """Two-burn Hohmann transfer between circular orbits: Δv of both burns, transfer time, phase angle.
 
+    An estimate on a circular, coplanar model, not the transfer that gets flown: ask `mj_maneuver` for
+    the real one (operation 'hohmann', with targetBody) and use this to know what it should cost.
+
     Burns are signed (+ prograde, - retrograde). ``phase_angle_deg`` is how far the destination must
     LEAD you at the first burn (negative: trail). With ``target_body`` the second burn is replaced by
     the arrival excess speed relative to the target and, with ``capture_alt_m``, the Oberth capture burn
@@ -982,7 +985,12 @@ def compute_maneuver(
     ut: Annotated[float | None, Field(description="Burn UT when at='ut' (game seconds).")] = None,
     earliest_ut: Annotated[float | None, Field(description="Plan the first opportunity at or after this UT (omit for now).")] = None,
 ) -> dict:
-    """Plan one burn from the active vessel's live orbit and return the node parameters (no node is created).
+    """Estimate one burn from the active vessel's live orbit and return the node parameters (no node created).
+
+    An estimate, not the maneuver that gets flown: the default way to change an orbit is `mj_maneuver`,
+    which lets MechJeb plan and fly it. Use this to know roughly what a move costs before asking for it,
+    or to check MechJeb's answer against a second number — the two will differ, and knowing which one you
+    trust is the point. `fly_burn` on a node from here is for the case where the exact node matters.
 
     Returns {ut, time_to_s, prograde_mps, normal_mps, radial_mps, dv_mps, burn_time_s, half_dv_time_s,
     predicted: {model, ksp}, math, notes}. ``predicted.ksp`` is KSP's own patched-conic result for the

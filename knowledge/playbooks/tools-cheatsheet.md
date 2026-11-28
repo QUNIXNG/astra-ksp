@@ -129,7 +129,8 @@ still trips, read the chute states it reports before deciding.
   until the vessel points near the braking direction, so turn retrograde before a low hand-off, and
   after contact it leaves the autopilot off and SAS on. Its parameters are derived in the
   landing-airless playbook.
-- **MechJeb** (`mj_ascent`, `mj_execute_node`, `mj_land`, `mj_rendezvous`, `mj_dock`) with `watch` and
+- **MechJeb** (`mj_maneuver` for every orbit change: it plans and flies it in one call; `mj_ascent`,
+  `mj_execute_node`, `mj_land`, `mj_rendezvous`, `mj_dock`) with `watch` and
   `max_game_s` runs as a reflex too. Every setting is yours; `mj_status` shows what it is doing and
   `mj_abort` releases its modules (including the staging controller, which otherwise may stage during
   later burns).

@@ -32,8 +32,9 @@ altitudes, burn times, staging, landing sites and margins one decision at a time
 
 - **Design.** Search the loaded part catalog, inspect parts, and build a `.craft` file.
   `design_check` reports per-stage Δv, TWR, steering authority and electric power.
-- **Fly.** Use MechJeb for ascent and planning, or fly a climb the AI wrote itself with
-  `fly_until`; create maneuver nodes, execute burns and change targets.
+- **Fly.** MechJeb flies by default: `mj_maneuver` plans and flies an orbit change in one call,
+  `mj_ascent` launches. `compute_*` estimates and cross-checks, `fly_burn` is for when one exact node
+  matters, and `fly_until` flies a program the AI wrote itself.
 - **Land.** `fly_descent` predicts a suicide burn by numerical integration, checks the terrain
   ahead, cancels horizontal drift, hovers, and leaves SAS holding the settled lander.
 - **Explore.** Control rosters and seats, EVA, jetpack hops, walking, flags and return to the
