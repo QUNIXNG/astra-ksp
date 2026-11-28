@@ -18,7 +18,7 @@ from pydantic import Field
 from astra import telemetry as tm
 from astra.config import CONFIG
 from astra.errors import AstraError, BridgeError, NotConnected, WrongScene
-from astra.ksp import ksp
+from astra.ksp import closest_approach, ksp
 from astra.registry import Picture, tool
 
 
@@ -402,7 +402,9 @@ def vessel_parts(
                 continue
             parent = p.parent
             row: dict[str, Any] = {"idx": i, "name": p.name, "title": p.title}
-            tag = p.tag
+            # kRPC 0.8.0 给 Part.tag 加了 ModRequirement：KSPCommunityPartModules/kOS 未装就直接抛异常。
+            # 标签只是可选徽记，读不到就当没有，不能让整个部件行报废。
+            tag = _safe(lambda: p.tag)
             if tag:
                 row["tag"] = tag
             row.update(stage=s, decouple_stage=ds,
@@ -803,7 +805,7 @@ def target_info() -> dict:
             out[label] = {"ut": node_ut, "time_to_s": node_ut - ut if node_ut is not None else None}
         out["closest_approach_krpc"] = _safe(lambda: {
             "ut": o.time_of_closest_approach(t_orbit),
-            "distance_m": o.distance_at_closest_approach(t_orbit),
+            "distance_m": closest_approach(o, t_orbit),
             "note": "single-conic estimate"})
         spans = [x for x in (period, finite(o.time_to_soi_change)) if x]
         window = min(spans) if spans else None

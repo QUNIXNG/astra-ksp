@@ -11,6 +11,7 @@ import math
 from typing import Any
 
 from astra.errors import AstraError
+from astra.ksp import autopilot_disengage, autopilot_engage
 from astra.reflex import vec
 from astra.reflex.context import Ctx
 
@@ -220,7 +221,7 @@ class FreeAttitude(AttitudeLaw):
     describe = "autopilot released"
 
     def start(self, ctx, m):
-        ctx.vessel.auto_pilot.disengage()
+        autopilot_disengage(ctx.vessel.auto_pilot)
 
 
 class _Autopilot(AttitudeLaw):
@@ -241,13 +242,13 @@ class _Autopilot(AttitudeLaw):
         ctx.vessel.control.sas = False
         ap.target_roll = float(self.roll) if self.roll is not None else _NAN
         for key in ("stopping_time", "deceleration_time", "attenuation_angle"):
-            if key in self.tuning:
+            if key in self.tuning and hasattr(ap, key):
                 setattr(ap, key, tuple(self.tuning[key]))
-        if "roll_threshold" in self.tuning:
+        if "roll_threshold" in self.tuning and hasattr(ap, "roll_threshold"):
             ap.roll_threshold = float(self.tuning["roll_threshold"])
         self._frame = None
         self.update(ctx, m)
-        ap.engage()
+        autopilot_engage(ap)
 
     def update(self, ctx, m):
         t = self.target(ctx, m)
@@ -462,7 +463,7 @@ class SasMode(AttitudeLaw):
 
     def start(self, ctx, m):
         v = ctx.vessel
-        v.auto_pilot.disengage()
+        autopilot_disengage(v.auto_pilot)
         v.control.sas = True
         enum = ctx.sc.SASMode
         try:

@@ -38,8 +38,8 @@ frames to split the vessel), `control_attitude` with `wait_aligned_deg`, `game_s
 `game_restore` (1 s so the loaded vessel unpacks) and `game_checkpoint` (0.2 s, only when called
 paused, so a just-switched vessel is active before the save). Telemetry reads, node edits, and
 control changes all work while paused (verified live). The AI can therefore take as long as it
-needs to compute, and fast dynamics are handled by reflexes that run the control loop at ~20 Hz
-until an AI-chosen trigger fires.
+needs to compute, and fast dynamics are handled by reflexes that run the control loop at 20 Hz
+(50 Hz in the last 500 m or in high dynamic pressure) until an AI-chosen trigger fires.
 
 ## Package layout and ownership
 
@@ -252,7 +252,8 @@ The AI writes a part tree. The first part is the root (usually the command part)
 
 ## Reflex engine (`astra.reflex`)
 
-`fly_until` runs a ~20 Hz loop on kRPC streams:
+`fly_until` runs a 20 Hz control loop on kRPC streams, stepping up to 50 Hz in the last 500 m or above
+20 kPa dynamic pressure (`TickRate` in `engine.py`; thresholds have hysteresis so it does not flap):
 
 1. Warp off (unless physics warp requested), apply the commanded throttle law and attitude law,
    unpause.

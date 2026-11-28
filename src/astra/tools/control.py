@@ -13,7 +13,7 @@ from pydantic import Field
 
 from astra import plans
 from astra.errors import AstraError
-from astra.ksp import ksp
+from astra.ksp import autopilot_disengage, autopilot_engage, ksp, stage_parts
 from astra.registry import tool
 from astra.tools.game import reset_links, stop_warp, wait_for
 from astra.tools.observe import (
@@ -108,7 +108,7 @@ def control_set(
             refused[key] = str(exc).splitlines()[0]
 
     if sas:
-        attempt("autopilot", "released", v.auto_pilot.disengage)
+        attempt("autopilot", "released", lambda: autopilot_disengage(v.auto_pilot))
     if sas is not None:
         attempt("sas", sas, lambda: setattr(c, "sas", sas))
     if speed_mode is not None:
@@ -230,7 +230,7 @@ def control_stage() -> dict:
     if stage_before <= 0:
         raise AstraError("there is no stage left to activate", "use control_part for individual parts")
     nxt = stage_before - 1
-    firing_parts = v.parts.in_stage(nxt)
+    firing_parts = stage_parts(v, nxt)
     parts = v.parts.all
     idx_of = part_index(parts)
     firing = []
@@ -466,7 +466,7 @@ def control_attitude(
     if m == "off":
         if wait_aligned_deg is not None:
             raise no_target
-        ap.disengage()
+        autopilot_disengage(ap)
         c.sas = False
         out["state"] = "autopilot and SAS released"
     elif m.startswith("sas:"):
@@ -478,7 +478,7 @@ def control_attitude(
                 return _angle_deg(v.direction(rf), want)
         elif wait_aligned_deg is not None:
             raise no_target
-        ap.disengage()
+        autopilot_disengage(ap)
         c.sas = True
         try:  # always set: SAS turned on keeps whatever mode it held before
             c.sas_mode = member
@@ -496,7 +496,7 @@ def control_attitude(
         else:
             ap.target_direction = aim["direction"]
         ap.target_roll = float(roll_deg) if roll_deg is not None else _NAN
-        ap.engage()
+        autopilot_engage(ap)
         out.update(state=f"autopilot: {aim['label']}", tracks=aim["tracks"])
         error_fn = lambda: ap.error  # noqa: E731
         if m in ("prograde", "retrograde") and frame == "surface":

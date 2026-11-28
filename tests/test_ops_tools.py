@@ -120,6 +120,13 @@ def decoupler(part):
     return part
 
 
+class _StageView:
+    """kRPC 0.8.0's Stage: what `stage_at(n)` returns (only ``parts`` is used)."""
+
+    def __init__(self, parts):
+        self.parts = parts
+
+
 class Parts:
     def __init__(self, vessel):
         self.v = vessel
@@ -158,8 +165,11 @@ class Parts:
     def with_module(self, m):
         return [p for p in self.v._parts if m in p.module_names]
 
-    def in_stage(self, s):
-        return [p for p in self.v._parts if p.stage == s]
+    def stage_at(self, stage):
+        return _StageView([p for p in self.v._parts if p.stage == stage])
+
+    def decouple_stage_at(self, s):
+        return _StageView([p for p in self.v._parts if p.decouple_stage == s])
 
     @property
     def root(self):
@@ -293,17 +303,9 @@ class FakeNode(Obj):
 class AutoPilot:
     def __init__(self):
         self.engaged = False
-        self.reference_frame = None
-        self.target_direction = None
         self.target_roll = None
         self.pitch_heading = None
         self.errors = iter([5.0])
-
-    def engage(self):
-        self.engaged = True
-
-    def disengage(self):
-        self.engaged = False
 
     def target_pitch_and_heading(self, pitch, heading):
         self.pitch_heading = (pitch, heading)
@@ -327,6 +329,12 @@ class Vessel(Obj):
         self.parts = Parts(self)
         self.control = Control(self, stage, refuse_sas)
         self.resources = Obj(all=[])
+
+    def stage_at(self, stage):
+        return _StageView([p for p in self.parts.all if p.stage == stage])
+
+    def decouple_stage_at(self, stage):
+        return _StageView([p for p in self.parts.all if p.decouple_stage == stage])
 
     def position(self, rf):
         return self.pos
@@ -600,6 +608,23 @@ def test_vessel_parts_structure_and_filters(k):
     with pytest.raises(AstraError) as err:
         call("vessel_parts", kind="wings")
     assert "engine" in err.value.hint
+
+
+def test_vessel_parts_survives_a_part_whose_tag_raises(k):
+    """kRPC 0.8.0 gives `Part.tag` a ModRequirement: without KSPCommunityPartModules the read raises,
+    and one dead read used to blank out the whole part row (34/34 parts on a live vessel)."""
+    v = fly_vessel(k, _stack_vessel())
+
+    class _AngryTag(Part):
+        def __getattribute__(self, name):
+            if name == "tag":
+                raise RuntimeError("KSPCommunityPartModules or kOS is not available: not installed")
+            return super().__getattribute__(name)
+
+    v._parts[0].__class__ = _AngryTag
+    rows = {r["idx"]: r for r in call("vessel_parts")["parts"]}
+    assert "error" not in rows[0] and "tag" not in rows[0]
+    assert rows[1]["tag"] == "sep"
 
 
 def test_telemetry_wrapper_adds_warp_control_and_retries(k, monkeypatch):

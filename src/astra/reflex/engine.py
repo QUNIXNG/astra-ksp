@@ -1,7 +1,8 @@
 """The reflex engine: run the sim under AI-commanded control laws until a trigger fires.
 
 One `fly()` call is one reflex. It unpauses the game, applies the throttle and attitude laws at
-~20 Hz from stream-fed metrics, watches for events and interlocks, optionally stages on flameout
+20 Hz (50 Hz in the last 500 m, or above 20 kPa dynamic pressure) from stream-fed metrics, watches
+for events and interlocks, optionally stages on flameout
 (only when the AI enabled it and the stage is safe), and stops on the first of: an AI trigger, an
 implicit law completion, an interlock, a timeout, or an extra stop callback. It then pauses the
 game for deliberation and returns what happened, including a compact trace.
@@ -13,15 +14,21 @@ import math
 import time
 from typing import Any, Callable
 
+from astra.config import CONFIG
 from astra.errors import AstraError, NoVessel
-from astra.ksp import ksp
+from astra.ksp import decouple_stage_parts, ksp, stage_parts
 from astra.reflex.context import Ctx
 from astra.reflex.events import EventDetector, merge_interlocks
 from astra.reflex.laws import AttitudeLaw, ThrottleLaw, parse_attitude, parse_throttle
 from astra.reflex.triggers import parse_until
 from astra.telemetry import probe
 
-TICK_S = 0.05
+TICK_S = 0.05              # 20 Hz：默认控制律周期
+TICK_FAST_S = 0.02         # 50 Hz：快动态段周期，追平 KSP 的物理帧
+FAST_ALT_M = 500.0         # 快段进入高度：着陆时离地 500 m 以下
+FAST_ALT_EXIT_M = 650.0    # 快段退出高度（迟滞，避免在阈值上下来回切）
+FAST_Q_PA = 20000.0        # 快段进入动压：20 kPa（上升段最大动压附近）
+FAST_Q_EXIT_PA = 15000.0   # 快段退出动压
 TRACE_FIELDS = ("t", "altitude", "surface_altitude", "vertical_speed", "surface_speed", "orbital_speed",
                 "apoapsis_altitude", "periapsis_altitude", "pitch", "throttle", "twr", "dynamic_pressure",
                 "stage")
@@ -34,6 +41,70 @@ FINAL_FIELDS = ("ut", "situation", "body", "altitude", "surface_altitude", "vert
 
 def _f(x: Any) -> bool:
     return isinstance(x, (int, float)) and not math.isnan(x) and not math.isinf(x)
+
+
+class TickRate:
+    """控制律周期：默认 20 Hz，着陆末段或大动压时切 50 Hz。
+
+    “贴地”只在下降时算快段：起飞穿过同一高度时动态是慢的（垂直速度为正），没必要 50 Hz。
+    两条判据都带迟滞，避免在阈值附近来回切：高度低于 FAST_ALT_M 进入、升过
+    FAST_ALT_EXIT_M 才退出；动压高于 FAST_Q_PA 进入、落到 FAST_Q_EXIT_PA 以下才退出。
+    任一条件成立即保持快段。采样值缺失或非有限值时按不成立处理，即退回慢段。
+    """
+
+    def __init__(self) -> None:
+        self.fast = False
+        self.fast_ticks = 0
+        self.slow_ticks = 0
+
+    def update(self, m: dict) -> float:
+        """看当前指标决定这一 tick 的周期，并计数。"""
+        alt = m.get("surface_altitude")
+        q = m.get("dynamic_pressure")
+        vs = m.get("vertical_speed")
+        alt_gate = FAST_ALT_EXIT_M if self.fast else FAST_ALT_M
+        grounded = str(m.get("situation", "")).lower() in ("pre_launch", "landed", "splashed")
+        landing = _f(alt) and alt < alt_gate and _f(vs) and vs <= 0.0 and not grounded
+        high_q = _f(q) and q > (FAST_Q_EXIT_PA if self.fast else FAST_Q_PA)
+        self.fast = landing or high_q
+        if self.fast:
+            self.fast_ticks += 1
+            return TICK_FAST_S
+        self.slow_ticks += 1
+        return TICK_S
+
+    def report(self) -> dict:
+        return {"default_period_s": TICK_S, "fast_period_s": TICK_FAST_S,
+                "fast_ticks": self.fast_ticks, "slow_ticks": self.slow_ticks}
+
+
+def _lights(v: Any, stage: int) -> list:
+    """The parts that would light if this stage were activated (empty for a stage past the end)."""
+    try:
+        return [p for p in stage_parts(v, stage) if p.engine is not None]
+    except Exception:  # noqa: BLE001 — a stage index that does not exist is a normal answer here
+        return []
+
+
+def _drops(v: Any, stage: int) -> list:
+    """The parts this stage would decouple (empty for a stage past the end)."""
+    try:
+        return list(decouple_stage_parts(v, stage))
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _stop_requested() -> bool:
+    """Has somebody asked the running reflex to stop?
+
+    A long reflex can outlive the client that started it: an MCP call that timed out leaves the loop
+    running with nobody listening. Setting ``ASTRA_STOP_FILE`` (default ``.cache/STOP``) from a shell
+    stops it at the next tick, without a second kRPC connection (they are not thread safe).
+    """
+    try:
+        return CONFIG.stop_file.exists()
+    except OSError:
+        return False
 
 
 class AutoStage:
@@ -65,8 +136,8 @@ class AutoStage:
         if nxt < 0:
             return "no stages left"
         parts = v.parts
-        igniting = [p for p in parts.in_stage(nxt) if p.engine is not None]
-        dropped = list(parts.in_decouple_stage(nxt))
+        igniting = _lights(v, nxt)
+        dropped = _drops(v, nxt)
         dropped_prop = 0.0
         for p in dropped:
             for r in p.resources.all:
@@ -81,7 +152,15 @@ class AutoStage:
             return None
         if not dropped:
             return "next stage neither lights an engine nor separates anything (chutes/fairings/payload?)"
-        return "next stage lights no engine and would leave no burning engine or drop propellant"
+        # 串列箭上「本级只装一个分离器」是常态（先抛上面的一级，再按一次才点火引擎）。往下穿过纯分离器级
+        # 找引擎；找到了就允许，fire() 会替 AI 补按那一下。
+        for cand in range(nxt - 1, max(nxt - 3, -1), -1):
+            if _lights(v, cand):
+                return None
+            if not _drops(v, cand):
+                break
+        return ("next stage lights no engine and would leave no burning engine or drop propellant "
+                f"(drops {dropped_prop:.0f} kg)")
 
     def fire(self, ctx: Ctx, ut: float) -> dict:
         v = ctx.vessel
@@ -90,7 +169,26 @@ class AutoStage:
         v.control.activate_next_stage()
         self.fired += 1
         self.last_ut = ut
-        # KSP splits the vessel over several frames; wait for the part count to settle.
+        after = self._settle(ctx, before)
+        detail = f"stage {stage_before} -> {stage_before - 1}, parts {before} -> {after}"
+        # 分离器单独占一级时，这一按还没点火；整船无引擎在烧而下一级有引擎，就补按一次，
+        # 否则整段无推力滑行（杆式箭上人工分级就是这么按的）。
+        try:
+            quiet = not any(e.active and e.has_fuel for e in ctx.vessel.parts.engines)
+            nxt = ctx.vessel.control.current_stage - 1
+            if quiet and nxt >= 0 and _lights(ctx.vessel, nxt):
+                before2 = len(ctx.vessel.parts.all)
+                ctx.vessel.control.activate_next_stage()
+                self.fired += 1
+                after2 = self._settle(ctx, before2)
+                detail += f"; lit the engine below: stage -> {nxt}, parts {before2} -> {after2}"
+        except NoVessel:
+            pass
+        return {"type": "auto_staged", "detail": detail}
+
+    @staticmethod
+    def _settle(ctx: Ctx, before: int) -> int:
+        """KSP splits the vessel over several frames; wait for the part count to settle."""
         t0 = time.monotonic()
         after = before
         while time.monotonic() - t0 < 2.0:
@@ -102,7 +200,7 @@ class AutoStage:
                 continue
             if after < before:
                 break
-        return {"type": "auto_staged", "detail": f"stage {stage_before} -> {stage_before - 1}, parts {before} -> {after}"}
+        return after
 
 
 def fly(*, until: list[dict] | None = None, throttle: Any = "keep", attitude: Any = "keep",
@@ -131,6 +229,7 @@ def fly(*, until: list[dict] | None = None, throttle: Any = "keep", attitude: An
     ctx = Ctx(k, p)
     det = EventDetector(p, cfg)
     sc = k.sc
+    rate = TickRate()
     events_log: list[dict] = []
     samples: list[dict] = []
     last_m: dict[str, Any] = {}
@@ -164,6 +263,7 @@ def fly(*, until: list[dict] | None = None, throttle: Any = "keep", attitude: An
             except NoVessel as exc:
                 stopped_by = {"kind": "interlock", "detail": f"vessel_changed: {exc.message}"}
                 break
+            tick_s = rate.update(m)
             ctx.check_body(m["body"])
             ut = m["ut"]
             game_s = ut - ut0
@@ -209,6 +309,10 @@ def fly(*, until: list[dict] | None = None, throttle: Any = "keep", attitude: An
             samples.append({"t": game_s, **{f: m.get(f) for f in TRACE_FIELDS[1:]}})
 
             # Stop conditions, most specific first.
+            if _stop_requested():
+                stopped_by = {"kind": "cancel",
+                              "detail": f"{CONFIG.stop_file} appeared: a client outside this call asked it to stop"}
+                break
             hit = next((r for r in (tr.check(m, events) for tr in triggers) if r), None)
             if hit:
                 stopped_by = {"kind": "trigger", "detail": hit}
@@ -244,7 +348,7 @@ def fly(*, until: list[dict] | None = None, throttle: Any = "keep", attitude: An
                 stopped_by = {"kind": "timeout",
                               "detail": f"max_real_s {max_real_s:g} reached (game time ran {game_s:.1f} s)"}
                 break
-            time.sleep(max(0.0, TICK_S - (time.monotonic() - tick0)))
+            time.sleep(max(0.0, tick_s - (time.monotonic() - tick0)))
     except AstraError:
         _safe_exit(k, ctx, exit_throttle)
         ctx.close()
@@ -281,6 +385,7 @@ def fly(*, until: list[dict] | None = None, throttle: Any = "keep", attitude: An
         "real_s": round(real_s, 1),
         "events": _compact_events(events_log),
         "stages_fired": stager.fired,
+        "tick_rate": rate.report(),
         "laws": {"throttle": tlaw.describe, "attitude": alaw.describe},
         "trace_fields": list(TRACE_FIELDS),
         "trace": _downsample(samples, events_log, trace_points),

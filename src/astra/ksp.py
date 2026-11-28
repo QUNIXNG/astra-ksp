@@ -22,6 +22,55 @@ except ImportError:  # pragma: no cover
     krpc = None  # type: ignore
 
 
+def autopilot_engage(ap: Any) -> None:
+    """Engage kRPC's attitude autopilot: `engage()` on 0.5.x, the `engaged` property on 0.8.0+."""
+    engage = getattr(ap, "engage", None)
+    if callable(engage):
+        engage()
+    else:
+        ap.engaged = True
+
+
+def autopilot_disengage(ap: Any) -> None:
+    """Release kRPC's attitude autopilot: `disengage()` on 0.5.x, the `engaged` property on 0.8.0+."""
+    release = getattr(ap, "disengage", None)
+    if callable(release):
+        release()
+    else:
+        ap.engaged = False
+
+
+def stage_parts(vessel: Any, stage: int) -> list:
+    """Parts a stage activates: `stage_at(n).parts` on kRPC 0.8.0+, `parts.in_stage(n)` before.
+
+    0.8.0 dropped ``Parts.in_stage``/``in_decouple_stage`` in favour of per-stage objects.
+    """
+    stage_at = getattr(vessel, "stage_at", None)
+    if callable(stage_at):
+        return list(stage_at(stage).parts)
+    return list(vessel.parts.in_stage(stage))
+
+
+def decouple_stage_parts(vessel: Any, stage: int) -> list:
+    """Parts a decouple stage sheds: `decouple_stage_at(n).parts` on 0.8.0+, `in_decouple_stage` before."""
+    decouple_at = getattr(vessel, "decouple_stage_at", None)
+    if callable(decouple_at):
+        return list(decouple_at(stage).parts)
+    return list(vessel.parts.in_decouple_stage(stage))
+
+
+def closest_approach(around: Any, target: Any) -> float:
+    """Distance between two orbits at closest approach, across kRPC versions.
+
+    0.8.0 deleted ``Orbit.distance_at_closest_approach(target)`` and added
+    ``Orbit.next_closest_approach(target) -> ClosestApproach``, whose ``.distance`` is the same number.
+    """
+    legacy = getattr(around, "distance_at_closest_approach", None)
+    if callable(legacy):
+        return float(legacy(target))
+    return float(around.next_closest_approach(target).distance)
+
+
 class KSP:
     def __init__(self) -> None:
         self._conn = None
@@ -145,10 +194,19 @@ class KSP:
                 pass
         return bool(self.conn.krpc.paused)
 
-    def set_paused(self, value: bool) -> None:
-        """Pause/resume without KSP's pause menu (bridge POST /pause); kRPC's `paused` opens the ESC
-        menu, which covers the view and the camera, so it is only the fallback."""
-        if self.scene() == "flight" and self.bridge.up():
+    def set_paused(self, value: bool, style: str | None = None) -> None:
+        """Pause or resume the game, in the style the policy asks for.
+
+        ``menu`` (the default) goes through kRPC's ``paused``, whose setter is exactly
+        ``PauseMenu.Display`` / ``PauseMenu.Close``: KSP's own pause menu opens, so the player can clear
+        the pause with ESC. ``silent`` uses the bridge, which pauses with ``FlightDriver.SetPause`` and
+        shows no menu — the view and camera stay usable, but ESC does nothing while paused that way, so
+        only ASTRA can resume. ``none`` leaves the game alone.
+        """
+        style = (style or CONFIG.pause_style or "menu").lower()
+        if style == "none":
+            return
+        if style != "menu" and self.scene() == "flight" and self.bridge.up():
             try:
                 reply = self.bridge.post("/pause", {"paused": bool(value)}, timeout=10.0)
                 if bool(reply.get("paused")) == bool(value):

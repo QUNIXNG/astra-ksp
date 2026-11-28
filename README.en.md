@@ -121,7 +121,8 @@ the game whenever a tool returns, without opening KSP's ESC menu. Telemetry, nod
 changes still work while paused. Game time advances only during reflexes (`fly_*`), MechJeb calls
 with `watch`, crew actions, staging, checkpoints and vessel switches.
 
-A **reflex** is a roughly 20 Hz control loop on kRPC streams. The AI supplies its stopping
+A **reflex** is a 20 Hz control loop on kRPC streams, stepping up to 50 Hz in the last 500 m or above
+20 kPa dynamic pressure. The AI supplies its stopping
 condition — a metric such as `surface_altitude <= 6000` or an event such as `landed` — and the
 reflex executes until that condition fires, an interlock trips, or a time bound expires. Interlocks
 cover flameout, part loss, SOI change, overheating, impact risk, loss of control and low power.

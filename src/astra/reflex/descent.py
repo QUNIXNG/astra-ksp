@@ -33,6 +33,7 @@ import math
 import time
 
 from astra.errors import AstraError
+from astra.ksp import autopilot_disengage, autopilot_engage
 from astra.reflex import vec
 from astra.reflex.context import Ctx
 from astra.reflex.laws import AttitudeLaw, ThrottleLaw
@@ -491,7 +492,7 @@ class DescentAttitude(AttitudeLaw):
         ap.reference_frame = ctx.brf
         ap.target_roll = float("nan")
         self.update(ctx, m)
-        ap.engage()
+        autopilot_engage(ap)
 
     def update(self, ctx, m):
         self._last_now = self.t.g._now(m)
@@ -501,7 +502,7 @@ class DescentAttitude(AttitudeLaw):
             # damp the rotation, so the lander does not rock over its downhill legs.
             if not self._settling:
                 self._settling = True
-                ap.disengage()
+                autopilot_disengage(ap)
                 ctx.vessel.control.sas = True
             return
         ap.target_direction = self.t.commanded(ctx)
@@ -514,7 +515,7 @@ class DescentAttitude(AttitudeLaw):
             # again the legs spring back and can throw the lander over. The autopilot is off; SAS
             # (stability assist) holds the settled attitude, which loads nothing.
             try:
-                ctx.vessel.auto_pilot.disengage()
+                autopilot_disengage(ctx.vessel.auto_pilot)
                 ctx.vessel.control.sas = True
             except Exception:  # noqa: BLE001
                 pass

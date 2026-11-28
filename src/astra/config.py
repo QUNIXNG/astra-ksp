@@ -71,6 +71,14 @@ class Config:
     # Pause the game whenever control returns to the AI, so deliberation costs zero game time.
     pause_between_commands: bool = field(
         default_factory=lambda: os.environ.get("ASTRA_PAUSE_BETWEEN_COMMANDS", "1") not in ("0", "false", "no"))
+    # How that pause is delivered: "silent" pauses through the bridge without the menu (the view stays
+    # usable, but only ASTRA can resume — ESC does nothing while paused without the menu), "menu" shows
+    # KSP's own pause menu (ESC also clears it, but it covers the screen), "none" never pauses.
+    pause_style: str = field(
+        default_factory=lambda: os.environ.get("ASTRA_PAUSE_STYLE", "silent").strip().lower())
+    # A long reflex can outlive the client that started it; creating this file stops it at the next tick.
+    stop_file: Path = field(
+        default_factory=lambda: Path(os.environ.get("ASTRA_STOP_FILE", REPO_ROOT / ".cache" / "STOP")))
 
     @property
     def saves_dir(self) -> Path:

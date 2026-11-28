@@ -1,6 +1,7 @@
 """Reflex engine tests against a small simulated vessel (vertical 1-D flight, fuel, staging)."""
 
 import math
+from types import SimpleNamespace
 
 import pytest
 
@@ -40,11 +41,12 @@ class _AutoPilot:
         self.target_roll = None
         self.error = 0.5
 
-    def engage(self):
-        self.engaged = True
 
-    def disengage(self):
-        self.engaged = False
+class _StageView:
+    """kRPC 0.8.0's Stage: what `stage_at(n)` returns (only ``parts`` is used)."""
+
+    def __init__(self, parts):
+        self.parts = parts
 
 
 class _Stage:
@@ -79,18 +81,6 @@ class _Parts:
     @property
     def engines(self):
         return [_Engine(self.sim, i) for i in range(len(self.sim.stages))]
-
-    def in_stage(self, stage):
-        # the engine of the next stage ignites when stage `stage` is activated
-        nxt = self.sim.stage_idx + 1
-        if nxt < len(self.sim.stages):
-            e = _Engine(self.sim, nxt)
-            e.part.engine = object()
-            return [e.part]
-        return []
-
-    def in_decouple_stage(self, stage):
-        return [type("P", (), {"resources": type("R", (), {"all": []})()})()]
 
 
 class _Control:
@@ -135,6 +125,18 @@ class Sim:
     @property
     def mass(self):
         return sum(s.fuel + s.dry for s in self.stages[self.stage_idx:])
+
+    def stage_at(self, stage):
+        # the engine of the next stage ignites when stage `stage` is activated
+        nxt = self.stage_idx + 1
+        if nxt < len(self.stages):
+            e = _Engine(self, nxt)
+            e.part.engine = object()
+            return _StageView([e.part])
+        return _StageView([])
+
+    def decouple_stage_at(self, stage):
+        return _StageView([type("P", (), {"resources": type("R", (), {"all": []})()})()])
 
     # body-frame vectors for the descent laws (x is up; the vessel stays upright)
     def position(self, frame):
@@ -738,3 +740,82 @@ def test_warp_descent_crossing_only_returns_a_future_crossing():
                                         1000.0) is None
     assert warp_mod.descent_crossing_ut(_CrossingOrbit(600_000.0, period=float("nan")), 600_000.0, 80_000.0,
                                         1000.0) is None
+
+
+def test_tick_rate_speeds_up_near_the_ground_and_in_high_q(monkeypatch):
+    # 常量改小成便于断言的数值，行为跟真值一样
+    monkeypatch.setattr(engine_mod, "TICK_S", 0.05)
+    monkeypatch.setattr(engine_mod, "TICK_FAST_S", 0.02)
+    r = engine_mod.TickRate()
+    # 高空小动压：默认 20 Hz
+    assert r.update({"surface_altitude": 40_000.0, "dynamic_pressure": 500.0,
+                     "vertical_speed": 0.0, "situation": "flying"}) == 0.05
+    # 动压过 20 kPa：切 50 Hz（上升段最大动压附近，垂直速度为正也照样切）
+    assert r.update({"surface_altitude": 10_000.0, "dynamic_pressure": 25_000.0,
+                     "vertical_speed": 400.0, "situation": "flying"}) == 0.02
+    # 回落到 18 kPa 仍在快段（迟滞，不会在 20 kPa 上下来回切）
+    assert r.update({"surface_altitude": 10_000.0, "dynamic_pressure": 18_000.0,
+                     "vertical_speed": 300.0, "situation": "flying"}) == 0.02
+    # 落到 15 kPa 以下且不贴地：退回 20 Hz
+    assert r.update({"surface_altitude": 10_000.0, "dynamic_pressure": 9_000.0,
+                     "vertical_speed": 200.0, "situation": "flying"}) == 0.05
+    # 起飞穿过 300 m（垂直速度为正）：不快，起飞穿过同一高度动态是慢的
+    assert r.update({"surface_altitude": 300.0, "dynamic_pressure": 0.0,
+                     "vertical_speed": 80.0, "situation": "flying"}) == 0.05
+    # 下降穿过 300 m：快段
+    assert r.update({"surface_altitude": 300.0, "dynamic_pressure": 0.0,
+                     "vertical_speed": -40.0, "situation": "flying"}) == 0.02
+    # 升到 600 m 仍在快段（迟滞），700 m 退出
+    assert r.update({"surface_altitude": 600.0, "dynamic_pressure": 0.0,
+                     "vertical_speed": -5.0, "situation": "flying"}) == 0.02
+    assert r.update({"surface_altitude": 700.0, "dynamic_pressure": 0.0,
+                     "vertical_speed": -5.0, "situation": "flying"}) == 0.05
+    # 已着陆：不高频空转
+    assert r.update({"surface_altitude": 2.0, "dynamic_pressure": 0.0,
+                     "vertical_speed": 0.0, "situation": "landed"}) == 0.05
+    # 读数缺失或非有限值：按不成立处理，退回慢段
+    assert r.update({"surface_altitude": None, "dynamic_pressure": None,
+                     "vertical_speed": None, "situation": None}) == 0.05
+    assert r.update({"surface_altitude": float("nan"), "dynamic_pressure": float("nan"),
+                     "vertical_speed": float("nan"), "situation": "flying"}) == 0.05
+    rep = r.report()
+    assert rep["fast_period_s"] == 0.02 and rep["default_period_s"] == 0.05
+    assert rep["fast_ticks"] == 4 and rep["slow_ticks"] == 7
+
+
+def test_stop_file_cancels_the_run(rig, monkeypatch, tmp_path):
+    """A reflex can outlive the client that started it; the STOP file is the only way to end it then."""
+    stop = tmp_path / "STOP"
+    monkeypatch.setattr(engine_mod, "CONFIG", SimpleNamespace(stop_file=stop))
+    stop.write_text("stop", encoding="utf-8")
+    _sim, _k = rig([_Stage(4000, 1000, 150000)])
+    rep = engine_mod.fly(until=[{"metric": "altitude", "op": ">=", "value": 1e7}], throttle=1.0, max_game_s=200)
+    assert rep["stopped_by"]["kind"] == "cancel"
+    assert "STOP" in rep["stopped_by"]["detail"]
+
+
+def _stage_ctx(by_stage, decoupled=()):
+    """A vessel whose stages hold exactly the given parts; `parts.engines` stays empty (nothing burning)."""
+    vessel = SimpleNamespace(
+        stage_at=lambda n: SimpleNamespace(parts=by_stage.get(n, [])),
+        decouple_stage_at=lambda n: SimpleNamespace(parts=by_stage.get(n, []) if n in decoupled else []),
+        parts=SimpleNamespace(engines=[]))
+    return SimpleNamespace(vessel=vessel, probe=SimpleNamespace(density=lambda name: 0.0))
+
+
+def _part(engine=None):
+    return SimpleNamespace(engine=engine, resources=SimpleNamespace(all=[]))
+
+
+def test_check_safe_looks_past_a_decoupler_only_stage():
+    """Serial stacks press twice: the decoupler fires first, the engine below lights on the next press."""
+    stage = {8: [_part()], 7: [_part(engine=object())]}
+    stager = engine_mod.AutoStage(True)
+    assert stager.check_safe(_stage_ctx(stage, decoupled=(8,)), 9) is None
+
+
+def test_check_safe_refuses_when_nothing_below_lights():
+    stage = {8: [_part()], 7: [_part()]}
+    stager = engine_mod.AutoStage(True)
+    reason = stager.check_safe(_stage_ctx(stage, decoupled=(8,)), 9)
+    assert reason is not None and "lights no engine" in reason

@@ -84,13 +84,6 @@ class _AutoPilot:
         self.target_roll = None
         self.target_direction: vec.Vec | None = None
 
-    def engage(self):
-        self.engaged = True
-
-    def disengage(self):
-        self.engaged = False
-        self.disengaged += 1
-
 
 class _Control:
     def __init__(self):

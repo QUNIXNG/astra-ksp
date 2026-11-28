@@ -28,7 +28,7 @@ from typing_extensions import TypedDict
 from astra import plans
 from astra.config import CONFIG
 from astra.errors import AstraError, NotConnected
-from astra.ksp import KSP, ksp
+from astra.ksp import KSP, closest_approach, ksp
 from astra.physics import calc, lambert, orbits, rocket
 from astra.physics.orbits import KeplerOrbit, Vec3, vdot, vnorm, vscale, vsub, vunit
 from astra.registry import tool
@@ -1070,7 +1070,7 @@ def _encounter(post_burn: Any, patches: list[dict], tgt: Any) -> dict:
         o = o.next_orbit if math.isfinite(o.time_to_soi_change) else None
     if o is None:
         return {"found": False}
-    return {"found": False, "closest_approach_m": o.distance_at_closest_approach(tgt.orbit),
+    return {"found": False, "closest_approach_m": closest_approach(o, tgt.orbit),
             "note": "KSP single-conic closest-approach estimate; refine with compute_node_search"}
 
 
@@ -1501,7 +1501,7 @@ class _NodeSearch:
         parent = self.enc.orbit.body if self.enc.orbit is not None else None  # None: the star itself
         around = next((p for p in chain if p.body == parent), None) if parent is not None else None
         if around is not None:
-            miss = around.distance_at_closest_approach(self.enc.orbit)
+            miss = closest_approach(around, self.enc.orbit)
             return {"cost": self.MISS + miss / self.enc.sphere_of_influence, "closest_approach_m": miss}
         last = chain[-1]
         ap = last.apoapsis if last.eccentricity < 1 else math.inf
