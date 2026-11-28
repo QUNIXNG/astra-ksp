@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import tempfile
 import threading
@@ -94,6 +95,37 @@ def mismatch(pid: str, *, ut: float, prograde: float, normal: float, radial: flo
     if not diffs:
         return None
     return f"plan {pid} ({plan.get('kind', '?')}) does not match this burn: " + ", ".join(diffs)
+
+
+def direction_mismatch(pid: str, *, ut: float, prograde: float, normal: float, radial: float,
+                       tol_ut: float = 1.0, tol_deg: float = 2.0) -> str | None:
+    """``None`` when this burn is the same burn as the plan: same UT, same direction.
+
+    The Δv magnitude is deliberately not compared. KSP recomputes a node's Δv against the orbit as it is
+    *now*, so a plan recorded a while ago legitimately reads differently after that orbit evolved (a 48 m/s
+    node measuring 52 m/s an hour later). Refusing on the magnitude alone blocks a burn that is still
+    exactly the planned one; a change of direction or time is what makes it a different burn.
+    """
+    plan = get(pid)
+    if plan is None:
+        return f"plan {pid} is not in the local cache (cache cleared, or recorded on another machine)"
+    if abs(ut - plan["ut"]) > tol_ut:
+        return f"plan {pid} ({plan.get('kind', '?')}) burns at UT {plan['ut']:.1f}, this one at {ut:.1f}"
+    planned = _unit((plan["prograde_mps"], plan["normal_mps"], plan["radial_mps"]))
+    actual = _unit((prograde, normal, radial))
+    if planned is None or actual is None:
+        return None  # a zero-length burn points nowhere; nothing to compare
+    ang = math.degrees(math.acos(max(-1.0, min(1.0, sum(p * a for p, a in zip(planned, actual))))))
+    if ang > tol_deg:
+        return (f"plan {pid} ({plan.get('kind', '?')}) points {ang:.1f}° away from this burn "
+                f"(planned {planned[0]:+.2f},{planned[1]:+.2f},{planned[2]:+.2f} vs "
+                f"{actual[0]:+.2f},{actual[1]:+.2f},{actual[2]:+.2f} per unit Δv)")
+    return None
+
+
+def _unit(vec: tuple[float, float, float]) -> tuple[float, float, float] | None:
+    n = math.sqrt(sum(c * c for c in vec))
+    return None if n <= 1e-9 else (vec[0] / n, vec[1] / n, vec[2] / n)
 
 
 def describe(pid: str) -> dict[str, Any] | None:

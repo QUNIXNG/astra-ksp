@@ -164,6 +164,28 @@ def _target_fields(tv: Any) -> dict:
     return {"targetPersistentId": pid} if pid is not None else {"target": tv.name}
 
 
+def _settings_divergence(applied: dict, effective: dict, tol: float = 1e-6) -> list[str]:
+    """Settings MechJeb reports as different from the ones sent (what it actually ran on).
+
+    MechJeb echoes an ``effective`` block next to the ``applied`` settings: quiet substitution is normal
+    (it keeps its own classic turn parameters unless a full set is given) and silently changes what flies.
+    """
+    out: list[str] = []
+    for key, sent in applied.items():
+        if key not in effective:
+            continue
+        got = effective[key]
+        if isinstance(sent, bool) or isinstance(got, bool):
+            if bool(sent) != bool(got):
+                out.append(f"{key}: sent {sent!r}, MechJeb ran {got!r}")
+        elif isinstance(sent, (int, float)) and isinstance(got, (int, float)):
+            if abs(float(sent) - float(got)) > max(tol, abs(float(sent)) * 1e-9):
+                out.append(f"{key}: sent {float(sent):g}, MechJeb ran {float(got):g}")
+        elif sent != got:
+            out.append(f"{key}: sent {sent!r}, MechJeb ran {got!r}")
+    return out
+
+
 # ---------------------------------------------------------------------------------------------
 
 
@@ -298,6 +320,24 @@ def mj_ascent(
                              "DesiredInclination, or the ascent was released before the turn finished. Re-launch, "
                              "or fix it with compute_maneuver kind='inclination' and fly_burn")
         result["inclination_check"] = check
+    # The altitude is the other number worth proving: "skip_circularization=False" once turned an 80 km ascent
+    # into a 546 km orbit, and the reply carried nothing that would have shown it.
+    actual_apo = orbit.get("apoapsis_alt_m")
+    if isinstance(actual_apo, (int, float)):
+        tol = max(2000.0, abs(altitude_m) * 0.02)
+        alt_check = {"requested_apoapsis_alt_m": altitude_m, "actual_apoapsis_alt_m": actual_apo,
+                     "tolerance_m": round(tol, 1), "ok": abs(actual_apo - altitude_m) <= tol}
+        if not alt_check["ok"]:
+            alt_check["note"] = (f"the ascent aimed at {altitude_m / 1000:.0f} km and produced {actual_apo / 1000:.1f} km: "
+                                 "with skip_circularization=false MechJeb circularizes at the apoapsis it reached "
+                                 "after the turn, and a light craft keeps climbing. Correct it with "
+                                 "compute_maneuver(kind='set_apsis') and fly_burn")
+        result["apoapsis_check"] = alt_check
+    settings = _settings_divergence(reply.get("applied") or {}, reply.get("effective") or {})
+    if settings:
+        result["settings_check"] = {"diverged": settings,
+                                    "note": "MechJeb reports these settings differently from what was sent: they are the "
+                                            "numbers the ascent actually ran on"}
     return result
 
 
@@ -341,6 +381,24 @@ def mj_execute_node(
     now = k.sc.ut
     result["nodes_after"] = [node_info(n, i, now) for i, n in enumerate(v.control.nodes)]
     result["orbit"] = _orbit_brief(v)
+    # MechJeb's executor re-plans the node it is given (its own solver, its own cutoff), so the burn that came out
+    # may not be the node that went in. Name the difference instead of leaving it to be noticed later.
+    if before:
+        first_before = before[0]
+        # MechJeb removes a node once it has flown it, so a shorter plan means the burn happened. A plan that is
+        # the same length still has the node it was handed -- compare that one, whatever it now says.
+        same = result["nodes_after"][0] if len(result["nodes_after"]) == len(before) else None
+        if same is None and len(result["nodes_after"]) < len(before):
+            result["node_consumed"] = True
+        elif same is not None:
+            changed = [f"{key}: {first_before[key]:.3f} -> {same[key]:.3f}"
+                       for key in ("ut", "prograde_mps", "normal_mps", "radial_mps")
+                       if abs(first_before[key] - same[key]) > 0.05]
+            if changed:
+                result["node_changed"] = {"changes": changed,
+                                          "note": "MechJeb's executor does not fly an ASTRA node untouched: it re-plans it "
+                                                  "with its own solver. When the burn must be exactly the planned one, fly it "
+                                                  "with fly_burn(node_index=...) instead"}
     return result
 
 

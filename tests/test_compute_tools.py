@@ -610,20 +610,27 @@ def test_hohmann_to_body_and_errors_leave_no_node(offline, monkeypatch):
     assert_clean(game)
 
 
-def test_hohmann_to_body_refuses_elliptical_parking_orbit(offline, monkeypatch):
-    # phasing assumes near-circular; on a 100 x 11406 km orbit the model returned -0.05 m/s with no encounter,
-    # which reads like a valid answer. It has to refuse and point at the node search instead.
-    game = make_game(monkeypatch, a=6_352_500.0, e=0.8898, mean_anomaly_at_epoch=0.3, epoch=1000.0)
-    with pytest.raises(AstraError) as exc:
-        call("compute_maneuver", kind="hohmann_to_body", target="Mun")
-    assert "eccentricity 0.890" in exc.value.message
-    assert "compute_node_search" in exc.value.hint
+def test_hohmann_to_body_solves_an_elliptical_parking_orbit_at_periapsis(offline, monkeypatch):
+    # A 100 x 11406 km parking orbit used to be refused outright (the 180-degree model needs fpa ~ 0, and off-apsis
+    # it returned -0.05 m/s with no encounter). It is now solved on the periapsis grid, where the model holds and
+    # the burn is cheapest, and the residual phase error is stated instead of hidden.
+    # 100 x 2000 km (e=0.135): well off-circular, apoapsis far inside the Mun's orbit radius.
+    game = make_game(monkeypatch, a=7_050_000.0, e=0.1348, mean_anomaly_at_epoch=0.3, epoch=1000.0)
+    out = call("compute_maneuver", kind="hohmann_to_body", target="Mun")
+    model = out["predicted"]["model"]
+    assert model["burn_point"] == "general"
+    assert 100.0 < model["transfer_sweep_deg"] < 260.0
+    assert abs(model["transfer_sweep_deg"] - 180.0) > 5.0  # the sweep is not half a revolution
+    assert model["parking_eccentricity"] == pytest.approx(0.1348, abs=1e-3)
+    # burning at periapsis of a 100 x 2000 km orbit to reach the Mun's radius: tens of m/s, not the full 857
+    assert 20 < out["prograde_mps"] < 150
+    assert any("flight-path angle" in n for n in out["notes"])
     assert_clean(game)
-    # a slightly eccentric orbit still gets the answer, with the caveat attached
+    # a slightly eccentric orbit still gets the continuous answer, with the caveat attached
     game = make_game(monkeypatch, a=R_K + 80_000, e=0.02, mean_anomaly_at_epoch=0.3, epoch=0.0)
     out = call("compute_maneuver", kind="hohmann_to_body", target="Mun")
     assert 780 < out["prograde_mps"] < 900  # still an answer; the exact figure moves with where you are in the orbit
-    assert any("eccentricity" in n for n in out["notes"])
+    assert out["predicted"]["model"]["phase_error_deg"] == pytest.approx(0.0, abs=1e-6)
     assert_clean(game)
 
 
@@ -1085,3 +1092,45 @@ def test_transfer_window_warns_about_low_parking_and_arrival_altitudes(offline):
     out = call("compute_transfer_window", origin="Kerbin", target="Duna", parking_alt_m=50_000,
                minimize="total", arrival_alt_m=20_000, earliest_ut=0, search_days=5)
     assert len(out["altitude_warnings"]) == 2 and all("atmosphere" in w for w in out["altitude_warnings"])
+
+
+def test_a_trial_node_killed_by_ksp_is_recreated_and_the_search_continues(monkeypatch):
+    """On a real search KSP deleted the trial node mid-run and `setattr` raised ObjectDestroyedException, taking
+    the whole search (and its cleanup) down. A node the game removed is not an answer: re-create it and go on."""
+    from astra.tools import compute as C
+
+    class Node:
+        def __init__(self):
+            object.__setattr__(self, "kills", 0)
+            for key in ("ut", "prograde", "normal", "radial"):
+                object.__setattr__(self, key, 0.0)
+
+        def __setattr__(self, name, value):
+            if name in ("ut", "prograde", "normal", "radial") and not self.kills:
+                object.__setattr__(self, "kills", 1)  # the first edit is the one KSP refuses
+                raise RuntimeError("ObjectDestroyedException: The maneuver node no longer exists, "
+                                   "as it is not in the vessel's flight plan")
+            object.__setattr__(self, name, value)
+
+    class Vessel:
+        class control:  # noqa: N801 - the fake mirrors kRPC's attribute name
+            nodes: list = []
+
+            @classmethod
+            def add_node(cls, ut, prograde=0.0, normal=0.0, radial=0.0):
+                node = Node()
+                for key, value in (("ut", ut), ("prograde", prograde), ("normal", normal), ("radial", radial)):
+                    object.__setattr__(node, key, value)  # planting the node is not an edit
+                cls.nodes.append(node)
+                return node
+
+    Vessel.control.nodes = []
+    monkeypatch.setattr(C._Trial, "_confirm", lambda *a, **k: None)
+    trial = C._Trial(None, Vessel(), None, 1e9)
+    trial.set(100.0, 10.0, 0.0, 0.0)
+    trial.set(100.0, 20.0, 0.0, 0.0)  # raises inside the setter: re-created with the wanted values
+    assert trial.recreated == 1
+    assert len(Vessel.control.nodes) == 2
+    assert Vessel.control.nodes[-1].prograde == 20.0
+    trial.set(100.0, 30.0, 0.0, 0.0)  # and the search keeps moving afterwards
+    assert Vessel.control.nodes[-1].prograde == 30.0

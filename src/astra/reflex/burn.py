@@ -124,13 +124,24 @@ def execute_node(*, node_index: int, max_throttle: float, lead_fraction: float, 
         raise AstraError(f"there is no maneuver node {node_index} ({len(nodes)} planned)",
                          "create one with node_create (compute it first with compute_maneuver)")
     node = nodes[node_index]
+    plan_note: str | None = None
     if plan is not None:
         # Checked here, not at the call site: the point is to catch a node that changed between planning and
         # ignition, which is exactly what a check at the start of a long coast would miss.
         drift = plans.mismatch(plan, ut=node.ut, prograde=node.prograde, normal=node.normal, radial=node.radial)
         if drift:
-            raise AstraError(drift, "the node is not what was planned (edited since, or the wrong plan id): "
-                                    "re-plan with compute_* and node_create, or drop plan= to burn what is there")
+            # A Δv magnitude that moved is normal (KSP rescales a node against the current orbit); a different
+            # direction or a different UT is a different burn and must not be flown on this plan's authority.
+            shape = plans.direction_mismatch(plan, ut=node.ut, prograde=node.prograde, normal=node.normal,
+                                             radial=node.radial)
+            if shape:
+                raise AstraError(drift + f" ({shape})", "the node is not what was planned (edited since, or the "
+                                                        "wrong plan id): re-plan with compute_* and node_create, or "
+                                                        "drop plan= to burn what is there")
+            plan_note = (f"{drift} — same direction and UT, so the node is still the planned burn and it is being "
+                         "flown at its current magnitude")
+    node_snapshot = {"ut": node.ut, "prograde_mps": node.prograde, "normal_mps": node.normal,
+                     "radial_mps": node.radial}
     dv = node.remaining_delta_v
     thrust = v.available_thrust * max_throttle
     isp = v.specific_impulse or v.vacuum_specific_impulse
@@ -146,9 +157,11 @@ def execute_node(*, node_index: int, max_throttle: float, lead_fraction: float, 
     start_ut = node.ut - bt * lead_fraction
     sc = k.sc
     report: dict[str, Any] = {"node_dv_mps": dv, "burn_time_est_s": bt, "start_ut": start_ut,
-                              "thrust_axis_offset_deg": offset}
+                              "thrust_axis_offset_deg": offset, "node": node_snapshot}
     if plan is not None:
         report["plan"] = plans.describe(plan) or plan
+    if plan_note:
+        report["plan_note"] = plan_note
 
     # Warp close to the start (the burn itself never runs under warp).
     lead_needed = align_margin_s
@@ -158,6 +171,17 @@ def execute_node(*, node_index: int, max_throttle: float, lead_fraction: float, 
         sc.warp_to(start_ut - lead_needed)
         sc.rails_warp_factor = 0
         report["warped_to_ut"] = sc.ut
+    # Warping is real game time: the node can be gone (KSP drops one whose UT passed while the vessel moved on) or
+    # rescaled. Say what is actually there before aiming at it rather than failing inside the attitude law.
+    nodes_now = v.control.nodes
+    if len(nodes_now) <= node_index:
+        report["result"] = (f"not burned: maneuver node {node_index} disappeared while coasting "
+                            "(KSP deletes a node whose UT has passed; a save/reload or an edit can too)")
+        report["paused"] = k.hold_for_deliberation()
+        return report
+    node = nodes_now[node_index]
+    report["node_now"] = {"ut": node.ut, "prograde_mps": node.prograde, "normal_mps": node.normal,
+                          "radial_mps": node.radial, "dv_mps": node.remaining_delta_v}
 
     # Align and coast to the start time.
     state = {"aligned_since": None}
@@ -183,8 +207,11 @@ def execute_node(*, node_index: int, max_throttle: float, lead_fraction: float, 
                 interlocks={"flameout": False, "soi_change": True}, trace_points=4, pause_at_end=False)
     report["align"] = {"stopped_by": align["stopped_by"], "game_s": align["game_s"]}
     if not str(align["stopped_by"].get("detail", "")).startswith("aligned"):
-        report["result"] = ("not burned: could not align in time; the node is now stale. Re-plan it (the "
-                            "vessel has moved on), give more align_margin_s, or relax align_deg")
+        late = k.sc.ut - start_ut
+        report["result"] = (f"not burned: could not align in time ({late:+.1f} s relative to the planned start); the "
+                            "node keeps its inertially fixed direction, so burning it late bends the orbit. "
+                            "Re-anchor it with node_set(ut=<now + time_to_s>) and fly it again, give more "
+                            "align_margin_s, or relax align_deg")
         report["paused"] = k.hold_for_deliberation()
         return report
 

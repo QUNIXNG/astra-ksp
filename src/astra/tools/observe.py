@@ -688,6 +688,52 @@ def orbit_info(
     return {"of": label, "ut": ut, "orbit": orbit_summary(o, ut), "patches": patch_chain(o, ut)}
 
 
+@tool("observe")
+def verify_orbit(
+    apoapsis_alt_m: Annotated[float | None, Field(description="Expected apoapsis altitude, m. Omit to skip this check.")] = None,
+    periapsis_alt_m: Annotated[float | None, Field(description="Expected periapsis altitude, m. Omit to skip this check.")] = None,
+    inclination_deg: Annotated[float | None, Field(description="Expected inclination to the body's equator, deg. Omit to skip this check.")] = None,
+    tolerance_m: Annotated[float, Field(description="How far an apsis may miss the expectation, m.")] = 1000.0,
+    tolerance_deg: Annotated[float, Field(description="How far the inclination may miss it, deg.")] = 0.1,
+) -> dict:
+    """Compare the orbit the vessel actually has with the one that was expected, and say which apsis missed.
+
+    A burn plan states an outcome (the predicted apo/periapsis and inclination); this closes the loop after the
+    burn instead of leaving the check to whoever remembers the numbers. Every value passed is checked and the
+    answer is one boolean plus the deltas, so a burn that half-worked cannot pass as done.
+    """
+    k = ksp()
+    v = k.vessel()
+    o = v.orbit
+    actual = {"apoapsis_alt_m": finite(o.apoapsis_altitude), "periapsis_alt_m": finite(o.periapsis_altitude),
+              "inclination_deg": finite(math.degrees(o.inclination)), "body": o.body.name,
+              "eccentricity": o.eccentricity, "period_s": finite(o.period)}
+    checks: list[dict] = []
+    for name, want, tol, got in (
+            ("apoapsis_alt_m", apoapsis_alt_m, tolerance_m, actual["apoapsis_alt_m"]),
+            ("periapsis_alt_m", periapsis_alt_m, tolerance_m, actual["periapsis_alt_m"]),
+            ("inclination_deg", inclination_deg, tolerance_deg, actual["inclination_deg"])):
+        if want is None:
+            continue
+        if got is None or not math.isfinite(got):
+            checks.append({"value": name, "expected": want, "actual": got, "tolerance": tol, "ok": False,
+                           "note": "the orbit has no such value (hyperbolic or missing patch)"})
+            continue
+        delta = got - want
+        checks.append({"value": name, "expected": want, "actual": round(got, 3), "delta": round(delta, 3),
+                       "tolerance": tol, "ok": abs(delta) <= tol})
+    if not checks:
+        raise AstraError("nothing to verify", "pass at least one of apoapsis_alt_m, periapsis_alt_m, inclination_deg")
+    out: dict[str, Any] = {"ok": all(c["ok"] for c in checks), "checks": checks, "actual": actual}
+    missed = [c for c in checks if not c["ok"]]
+    if missed:
+        out["note"] = ("the burn did not land where it was aimed: "
+                        + ", ".join(f"{c['value']} off by {c.get('delta', float('nan')):+.1f}" for c in missed)
+                        + ". A leftover node usually explains the apsides: node_list first, then trim the rest "
+                          "with compute_maneuver at the apsis you did reach")
+    return out
+
+
 # ---------------------------------------------------------------------------------------------
 # Targets
 

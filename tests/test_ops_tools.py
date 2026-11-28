@@ -1105,6 +1105,28 @@ def test_nodes_create_list_delete(k):
     assert call("node_create", ut=1300.0, prograde_mps=1.0, normal_mps=0.0, radial_mps=0.0)["burn"]["burn_time_s"] is None
 
 
+def test_node_set_rewrites_one_component_in_place(k):
+    """The edit path a planning tool needs: a normal component nobody could express at plan time, and a
+    magnitude KSP rescales as the orbit evolves, without deleting and re-creating the node."""
+    v = fly_vessel(k, Vessel("Ship"))
+    v.available_thrust, v.specific_impulse, v.mass = 200e3, 300.0, 10e3
+    call("node_create", ut=1500.0, prograde_mps=100.0, normal_mps=0.0, radial_mps=0.0)
+    out = call("node_set", index=0, prograde_mps=250.0, normal_mps=-18.0)
+    assert out["before"]["prograde_mps"] == pytest.approx(100.0)
+    assert out["prograde_mps"] == pytest.approx(250.0)
+    assert out["normal_mps"] == pytest.approx(-18.0)
+    assert out["radial_mps"] == pytest.approx(0.0)
+    assert out["ut"] == pytest.approx(1500.0)  # untouched when not asked for
+    assert out["node_count"] == 1 and len(call("node_list")["nodes"]) == 1  # edited, not duplicated
+    with pytest.raises(AstraError):
+        call("node_set", index=0)  # nothing to change
+    with pytest.raises(AstraError) as exc:
+        call("node_set", index=0, ut=900.0)  # KSP deletes a node once its time passes
+    assert "not in the future" in exc.value.message
+    with pytest.raises(AstraError):
+        call("node_set", index=7, prograde_mps=1.0)
+
+
 def test_node_create_refuses_a_burn_that_drifted_from_its_plan(k, tmp_path, monkeypatch):
     from types import SimpleNamespace
 
@@ -1725,6 +1747,8 @@ def test_mj_execute_node_watch_stops_when_mechjeb_goes_idle(k, monkeypatch):
     assert out["watch"]["first"] is None and out["watch"]["mechjeb_finished"] is True
     assert out["watch"]["stopped_by"]["detail"] == "mechjeb_done"
     assert len(out["nodes_before"]) == 1 and out["nodes_after"] == [] and out["paused"] is True
+    # a node MechJeb flew and removed is the normal ending, not evidence that it re-planned the burn
+    assert out["node_consumed"] is True and "node_changed" not in out
     with pytest.raises(AstraError):
         call("mj_execute_node", all_nodes=False, autowarp=True, lead_time_s=30.0, autostage=False, watch=False)
 
@@ -1967,3 +1991,36 @@ def test_checkpoint_scene_from_sidecar_or_save(tmp_path):
     assert game._checkpoint_scene(sfs) == "flight"
     sfs.with_suffix(".astra.json").write_text('{"scene": "space_center"}', encoding="utf-8")
     assert game._checkpoint_scene(sfs) == "space_center"  # the sidecar wins
+
+
+def test_mj_execute_node_reports_a_node_mechjeb_re_planned(k, monkeypatch):
+    """MechJeb's executor re-solves the node it is handed. That is invisible unless the node is read back:
+    on a real flight it left a second node planning 5,748 m/s and lost the encounter it was given."""
+    v = fly_vessel(k, Vessel("Ship"))
+    v.control.add_node(1600.0, prograde=50.0)
+    k.bridge.replies[("GET", "/mj-status")] = {"hasCore": True, "modules": {"node": {"enabled": True}}}
+    k.bridge.replies[("POST", "/mj-execute-node")] = {"executing": True}
+
+    def fake_fly(**kw):
+        node = v.control.nodes[0]
+        node.ut, node.prograde = 1640.0, 72.0  # it kept the node, but changed the burn
+        return {"stopped_by": {"kind": "condition", "detail": "mechjeb_done"}}
+    monkeypatch.setitem(sys.modules, "astra.reflex.engine", types.SimpleNamespace(fly=fake_fly))
+    out = call("mj_execute_node", all_nodes=False, autowarp=True, lead_time_s=30.0, autostage=False,
+               watch=True, max_game_s=600.0, interlocks={"flameout": False})
+    assert "node_consumed" not in out
+    changes = out["node_changed"]["changes"]
+    assert any(c.startswith("ut: 1600.000 -> 1640.000") for c in changes)
+    assert any(c.startswith("prograde_mps: 50.000 -> 72.000") for c in changes)
+    assert "fly_burn(node_index=...)" in out["node_changed"]["note"]
+
+
+def test_settings_divergence_names_what_mechjeb_overrode():
+    """mj_ascent reports both what was written and what MechJeb reports as effective; the difference is the only
+    way to notice that a setting was silently overridden."""
+    same = {"altitude": 80000.0, "autostage": True, "ascentType": "classic"}
+    assert autopilot._settings_divergence(same, dict(same)) == []
+    out = autopilot._settings_divergence({"altitude": 80000.0, "autostage": True},
+                                        {"altitude": 90000.0, "autostage": False})
+    assert any("altitude" in line and "90000" in line for line in out)
+    assert any("autostage" in line for line in out)

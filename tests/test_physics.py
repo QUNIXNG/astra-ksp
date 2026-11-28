@@ -341,6 +341,26 @@ def test_plan_transfer_to_satellite_hits_the_moon():
     assert vnorm(vsub(r_end, krpc_axes(moon)(p["ut"] + p["tof"])[0])) < 100
 
 
+def test_plan_transfer_to_satellite_solves_an_elliptical_parking_orbit():
+    # 100 x 2000 km (a = 7050 km, e = 0.135), Moon at its stock semi-major axis. A burn that keeps the flight-path
+    # angle arrives after ~198.6 deg, not 180: assuming pi here returned -0.05 m/s with no encounter, which read
+    # like a valid answer. Verify by flying the planned transfer and taking the closest approach to the Moon.
+    craft = KeplerOrbit(MU_KERBIN, 7_050_000.0, 0.135, mean_anomaly_at_epoch=0.3)
+    moon = KeplerOrbit(MU_KERBIN, SMA_MUN, 0.0, mean_anomaly_at_epoch=1.7)
+    p = orbits.plan_transfer_to_satellite(MU_KERBIN, krpc_axes(craft), krpc_axes(moon), 1000.0, require_apsis=True)
+    assert p["ut"] >= 1000.0
+    assert 100.0 < p["sweep_deg"] < 260.0
+    assert abs(p["sweep_deg"] - 180.0) > 5.0  # a burn off the apsides does not arrive half a revolution later
+    assert p["prograde_dv"] > 0
+    r, v = krpc_axes(craft)(p["ut"])
+    v2 = orbits.vadd(v, orbits.vscale(orbits.vunit(v), p["prograde_dv"]))
+    best = min(
+        vnorm(vsub(orbits.propagate(MU_KERBIN, r, v2, p["tof"] * i / 200)[0],
+                   krpc_axes(moon)(p["ut"] + p["tof"] * i / 200)[0]))
+        for i in range(201))
+    assert best < SOI_MUN  # an encounter, not a near miss
+
+
 def test_plan_escape_from_moon_reaches_target_periapsis():
     moon = KeplerOrbit(MU_KERBIN, SMA_MUN, 0.0)
     craft = KeplerOrbit(MU_MUN, R_MUN + 20_000, 0.0, 0.2, 0.5)

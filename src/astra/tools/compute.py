@@ -786,6 +786,7 @@ class _Trial:
         self.node = None
         self._sent: tuple[float, float, float, float] | None = None  # values last sent to the node
         self.ticked_s = 0.0
+        self.recreated = 0  # how many times KSP deleted the trial node and it had to be re-created
 
     def set(self, ut: float, pro: float, nor: float, rad: float) -> Any:
         want = (ut, pro, nor, rad)
@@ -797,7 +798,19 @@ class _Trial:
             n, sent = self.node, self._sent or (None,) * 4
             for name, value, old in zip(("ut", "prograde", "normal", "radial"), want, sent):
                 if value != old:
-                    setattr(n, name, value)
+                    try:
+                        setattr(n, name, value)
+                    except Exception as exc:  # noqa: BLE001 — KSP dropped the node out from under us
+                        # "ObjectDestroyedException: The maneuver node no longer exists": KSP deletes a node it
+                        # judges invalid (its UT reached, the orbit was replaced by a save load, the solver dropped
+                        # the plan). Re-create it and keep searching; a node the game removed is not an answer.
+                        if "no longer exists" not in str(exc):
+                            raise
+                        self.node = self.vessel.control.add_node(ut, prograde=pro, normal=nor, radial=rad)
+                        self.recreated += 1
+                        self._sent = want
+                        self._confirm(ut, pro, nor, rad)
+                        return self.node
         self._sent = want
         self._confirm(ut, pro, nor, rad)
         return self.node
@@ -1219,7 +1232,7 @@ def _plan_plane_change(lv: _Live, *, at: str, t0: float, target: str | None,
                     "normal = ±v_h sinθ, prograde/radial = v_h(cosθ-1) split by the flight-path angle"}
 
 
-# Hohmann phasing degrades quickly off-circular; above this the answer should not be trusted at all.
+# Above this eccentricity the burn is pinned to periapsis passages (the 180-degree model needs fpa ~ 0).
 _HOHMANN_MAX_ECC = 0.05
 
 
@@ -1228,22 +1241,31 @@ def _plan_hohmann_to_body(lv: _Live, *, t0: float, target: str, **_: Any) -> dic
     _need(kind == "body", f"{target} is a vessel", "hohmann_to_body targets a moon or planet; use a node search for vessels")
     _need(tgt.orbit is not None and tgt.orbit.body == lv.body, f"{tgt.name} does not orbit {lv.body.name}",
           "use compute_transfer_window for a body around a different parent")
-    # The Hohmann model solves phasing for a near-circular parking orbit; on a clearly elliptical one it returns a
-    # confidently wrong number (a 100x11406 km orbit yielded -0.05 m/s with no encounter). Refuse instead.
-    _need(lv.craft.e <= _HOHMANN_MAX_ECC, f"parking orbit eccentricity {lv.craft.e:.3f} is too high for the Hohmann model",
-          "hohmann_to_body assumes a near-circular parking orbit; use compute_node_search with "
-          "objective {encounter_body: ..., target_periapsis_m: ..., minimize: 'dv'} and let it place the burn")
     moon = _krpc_axes(_kepler_of(tgt.orbit))
-    plan = _physics(orbits.plan_transfer_to_satellite, lv.mu, lv.state, moon, t0)
-    notes = []
-    if lv.craft.e > 0.01:
-        notes.append(f"parking orbit eccentricity {lv.craft.e:.3f}: phasing assumes near-circular; trust KSP's prediction")
+    # An elliptical parking orbit is fine as long as the burn sits on an apsis: the transfer then sweeps 180 degrees
+    # and the prograde dv follows from the local speed. Off-apsis the sweep is shorter, the phase shifts and the
+    # model returns a confidently wrong number, so the search is pinned to periapsis passages instead of refused.
+    elliptical = lv.craft.e > _HOHMANN_MAX_ECC
+    plan = _physics(orbits.plan_transfer_to_satellite, lv.mu, lv.state, moon, t0, require_apsis=elliptical)
+    notes: list[str] = []
+    phase_error = plan.get("phase_error", 0.0)
+    if elliptical:
+        notes.append(f"parking orbit eccentricity {lv.craft.e:.3f}: a prograde burn keeps the flight-path angle, so the "
+                     f"transfer arrives {plan.get('sweep_deg', 180.0):.1f} deg from the burn point rather than 180; the "
+                     "sweep is solved from the post-burn orbit instead of assumed")
+    if abs(_DEG(phase_error)) > 0.5:
+        notes.append(f"phase cannot be solved exactly on that grid: residual {abs(_DEG(phase_error)):.1f} deg, i.e. the "
+                     "encounter will miss the target centre. Refine the burn point with compute_node_search "
+                     "(objective encounter_body + target_periapsis_m), or fly a phasing orbit first")
     rel_inc = orbits.vangle(orbits.vcross(*lv.state(t0)), orbits.vcross(*moon(t0)))
     return {"ut": plan["ut"], "prograde": plan["prograde_dv"], "notes": notes, "encounter_target": tgt,
             "model": {"relative_inclination_deg": _DEG(rel_inc),  # coplanar model: a tilted target can be missed
                       "transfer_time_s": plan["tof"], "phase_angle_now_deg": _DEG(plan["lead_angle_at_start"]),
                       "phase_angle_at_burn_deg": _DEG(plan["lead_angle"]),
                       "required_phase_angle_deg": _DEG(plan["required_lead"]),
+                      "phase_error_deg": _DEG(phase_error), "burn_point": plan.get("burn_point", "any"),
+                      "transfer_sweep_deg": plan.get("sweep_deg"),
+                      "parking_eccentricity": lv.craft.e,
                       "arrival_radius_m": plan["arrival_radius"], "synodic_period_s": plan["synodic_period"]},
             "math": "tof = pi*sqrt(((r1+r2)/2)^3/mu); burn when the target leads by pi minus its sweep during tof; "
                     "the prograde burn puts the apoapsis at the target's radius at arrival. This aims at the target's "
@@ -1405,6 +1427,9 @@ def compute_node_search(
         if lv.trial.ticked_s > 0:
             notes.append(f"the game ran {lv.trial.ticked_s:.2f} s (real time) to refresh KSP's predictions; "
                          "the pause state was restored")
+        if lv.trial.recreated:
+            notes.append(f"KSP deleted the trial node {lv.trial.recreated}x mid-search (invalid UT or a dropped plan) and "
+                         "it was re-created; the search continued from the same point")
         pid = plans.remember("node_search", vals["ut"], vals["prograde"], vals["normal"], vals["radial"],
                              dv_mps=round(dv, 4))
         return {

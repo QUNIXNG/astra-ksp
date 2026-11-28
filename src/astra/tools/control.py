@@ -804,6 +804,46 @@ def node_create(
 
 
 @tool("control")
+def node_set(
+    index: Annotated[int, Field(description="Node index from node_list (0 = the next burn).")],
+    ut: Annotated[float | None, Field(description="New burn UT, s. Use it to re-anchor a node the vessel has coasted past. Omit to keep the current one.")] = None,
+    prograde_mps: Annotated[float | None, Field(description="New prograde Δv, m/s (negative = retrograde). Omit to keep it.")] = None,
+    normal_mps: Annotated[float | None, Field(description="New normal Δv, m/s (negative = antinormal). Omit to keep it.")] = None,
+    radial_mps: Annotated[float | None, Field(description="New radial Δv, m/s (negative = radial-in). Omit to keep it.")] = None,
+) -> dict:
+    """Rewrite one component of an existing node in place (the others stay as they are).
+
+    This is the edit path that keeps a node when only part of it changed: a burn measured against a different
+    orbit (KSP rescales the magnitude as the orbit evolves), a normal component nobody could express at plan
+    time, or a node to re-anchor in time after a coast overran. Reports the numbers before and after plus KSP's
+    prediction, so a rewrite is checked, not assumed. To replace a node wholesale, delete and node_create it.
+    """
+    k = ksp()
+    v = k.vessel()
+    nodes = v.control.nodes
+    if not 0 <= int(index) < len(nodes):
+        raise AstraError(f"no node {index} (there are {len(nodes)})", "node_list shows the indices")
+    wanted = {"ut": ut, "prograde": prograde_mps, "normal": normal_mps, "radial": radial_mps}
+    if all(value is None for value in wanted.values()):
+        raise AstraError("nothing to change", "pass at least one of ut, prograde_mps, normal_mps, radial_mps")
+    node = nodes[int(index)]
+    now = k.sc.ut
+    before = node_info(node, int(index), now)
+    target_ut = before["ut"] if ut is None else float(ut)
+    if target_ut <= now:
+        raise AstraError(f"ut {target_ut:.1f} is not in the future (now {now:.1f})",
+                         "KSP deletes a node once its time passes; compute a UT ahead of the vessel")
+    for name, value in wanted.items():
+        if value is not None:
+            setattr(node, name, float(value))
+    out = {"before": {k2: before[k2] for k2 in ("ut", "prograde_mps", "normal_mps", "radial_mps", "delta_v_mps")}}
+    out.update(node_info(node, int(index), now))
+    out["burn"] = burn_estimate(v, node.delta_v)
+    out["node_count"] = len(nodes)
+    return out
+
+
+@tool("control")
 def node_list() -> dict:
     """All maneuver nodes in time order, with Δv, time to go, and the predicted orbit after each."""
     k = ksp()

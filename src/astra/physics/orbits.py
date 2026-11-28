@@ -633,45 +633,118 @@ def fpa_of(r: Vec3, v: Vec3) -> float:
     return math.asin(max(-1.0, min(1.0, vdot(r, v) / (vnorm(r) * vnorm(v)))))
 
 
+def periapsis_passages(craft: StateFn, t0: float, t1: float, samples: int = 720) -> list[float]:
+    """Times in (t0, t1) at which the craft passes through periapsis (a local minimum of |r|).
+
+    The three samples around each minimum are refined with the vertex of their parabola, so the result
+    is accurate to well under a sample step for a Keplerian orbit."""
+    if t1 <= t0 or samples < 2:
+        raise ValueError("need t1 > t0 and samples >= 2")
+    step = (t1 - t0) / samples
+    rs = [vnorm(craft(t0 + i * step)[0]) for i in range(samples + 1)]
+    out: list[float] = []
+    for i in range(1, samples):
+        if rs[i] <= rs[i - 1] and rs[i] <= rs[i + 1]:
+            curv = rs[i - 1] - 2.0 * rs[i] + rs[i + 1]
+            off = 0.0 if curv <= 0 else max(-0.5, min(0.5, 0.5 * (rs[i - 1] - rs[i + 1]) / curv))
+            out.append(t0 + (i + off) * step)
+    return out
+
+
 def plan_transfer_to_satellite(mu: float, craft: StateFn, satellite: StateFn, t_start: float,
-                               samples: int = 720) -> dict:
+                               samples: int = 720, require_apsis: bool = False) -> dict:
     """First prograde burn at or after ``t_start`` that sends a craft from its orbit to the radius of a
     satellite of the same primary, timed so the satellite is there on arrival (Hohmann phasing).
 
-    Assumes one prograde burn and arrival 180 degrees from the burn point. Returns ``ut, prograde_dv,
-    tof, lead_angle, required_lead`` (angles in rad, measured in the craft's plane)."""
+    Assumes one prograde burn. Returns ``ut, prograde_dv, tof, lead_angle, required_lead`` (angles in
+    rad, measured in the craft's plane) plus ``sweep_deg`` (how far the craft travels from the burn
+    point to the arrival apsis) and ``phase_error`` (rad, 0 when the phase was solved).
+
+    For a circular parking orbit the transfer sweeps exactly 180 degrees. For an elliptical one it does
+    not: a burn away from an apsis keeps the flight-path angle, so the arrival apsis is less (outbound)
+    or more (inbound) than half a revolution away, and assuming 180 degrees returns a confidently wrong
+    Δv with no encounter (a 100 x 11406 km orbit gave -0.05 m/s). ``require_apsis`` therefore solves the
+    real sweep from the post-burn orbit instead of assuming it."""
     r0, v0 = craft(t_start)
     h = vcross(r0, v0)
-    n_c = vnorm(h) / vnorm(r0) ** 2
+    eps_c = vdot(v0, v0) / 2.0 - mu / vnorm(r0)
+    a_c = -mu / (2.0 * eps_c) if eps_c < 0 else math.inf
+    n_c = math.sqrt(mu / a_c ** 3) if math.isfinite(a_c) else vnorm(h) / vnorm(r0) ** 2
     rs0, vs0 = satellite(t_start)
     n_s = vnorm(vcross(rs0, vs0)) / vnorm(rs0) ** 2
     if abs(n_c - n_s) < 1e-15:
         raise ValueError("craft and satellite have the same angular rate: the phase never changes")
 
-    def solve(t: float) -> tuple[float, float, float]:
+    def solve(t: float) -> tuple[float, float, float, float]:
+        """(signed lead of the satellite, required lead, transfer time, sweep) at burn time ``t``."""
         rc, _ = craft(t)
         rs, _ = satellite(t)
         r1 = vnorm(rc)
         tof = math.pi * math.sqrt(((r1 + vnorm(rs)) / 2.0) ** 3 / mu)
         tof = math.pi * math.sqrt(((r1 + vnorm(satellite(t + tof)[0])) / 2.0) ** 3 / mu)
         swept = signed_angle(rs, satellite(t + tof)[0], h)
-        return wrap_pi(signed_angle(rc, rs, h)), wrap_pi(math.pi - swept), tof
+        return wrap_pi(signed_angle(rc, rs, h)), wrap_pi(math.pi - swept), tof, math.pi
+
+    def solve_apsis(t: float) -> tuple[float, float, float, float]:
+        """Same, but with the sweep the post-burn orbit really makes (elliptical parking orbit)."""
+        rc, vc = craft(t)
+        rs, _ = satellite(t)
+        r1, speed = vnorm(rc), vnorm(vc)
+        fpa = fpa_of(rc, vc)
+        dv = speed_for_apsis(mu, r1, fpa, vnorm(rs)) - speed
+        if dv + speed <= 0:
+            raise ValueError("the transfer burn would remove all velocity")
+        v2 = speed + dv
+        h2 = r1 * v2 * math.cos(fpa)
+        eps = v2 * v2 / 2.0 - mu / r1
+        if eps >= 0:
+            raise ValueError("the transfer burn would escape; the Hohmann model needs a bound transfer")
+        a2 = -mu / (2.0 * eps)
+        e2 = math.sqrt(max(0.0, 1.0 + 2.0 * eps * h2 * h2 / (mu * mu)))
+        nu = 0.0 if e2 < 1e-12 else true_anomaly_at_radius(a2, e2, r1)
+        # Outbound the craft still has to reach the apoapsis (pi - nu); inbound it first falls to
+        # periapsis and climbs again (pi + nu).
+        sweep = math.pi - nu if fpa >= 0.0 else math.pi + nu
+        tof = time_between_anomalies(mu, a2, e2, nu if fpa >= 0.0 else -nu, math.pi)
+        rs_arr = satellite(t + tof)[0]
+        if abs(vnorm(rs_arr) - vnorm(rs)) > 1e-6 * vnorm(rs):
+            # one correction pass: the transfer time depends on the arrival radius
+            dv = speed_for_apsis(mu, r1, fpa, vnorm(rs_arr)) - speed
+            v2 = speed + dv
+            h2 = r1 * v2 * math.cos(fpa)
+            eps = v2 * v2 / 2.0 - mu / r1
+            if eps >= 0:
+                raise ValueError("the transfer burn would escape; the Hohmann model needs a bound transfer")
+            a2 = -mu / (2.0 * eps)
+            e2 = math.sqrt(max(0.0, 1.0 + 2.0 * eps * h2 * h2 / (mu * mu)))
+            nu = 0.0 if e2 < 1e-12 else true_anomaly_at_radius(a2, e2, r1)
+            sweep = math.pi - nu if fpa >= 0.0 else math.pi + nu
+            tof = time_between_anomalies(mu, a2, e2, nu if fpa >= 0.0 else -nu, math.pi)
+        swept = signed_angle(rs, satellite(t + tof)[0], h)
+        return wrap_pi(signed_angle(rc, rs, h)), wrap_pi(sweep - swept), tof, sweep
+
+    solver = solve_apsis if require_apsis else solve
 
     def mismatch(t: float) -> float:
-        lead, required, _ = solve(t)
+        lead, required, _, _ = solver(t)
         return wrap_pi(lead - required)
 
     synodic = TAU / abs(n_c - n_s)
-    t_b = find_zero(mismatch, t_start, t_start + 1.05 * synodic, samples)
-    if t_b is None:
+    phase_error = 0.0
+    found = find_zero(mismatch, t_start, t_start + 1.05 * synodic, samples)
+    if found is None:
         raise ValueError("no transfer opportunity found within one synodic period")
-    lead, required, tof = solve(t_b)
+    t_b = found
+    lead, required, tof, sweep = solver(t_b)
     rc, vc = craft(t_b)
     r_arr = vnorm(satellite(t_b + tof)[0])
     dv = speed_for_apsis(mu, vnorm(rc), fpa_of(rc, vc), r_arr) - vnorm(vc)
-    lead_now, _, _ = solve(t_start)
+    lead_now, _, _, _ = solver(t_start)
+    sweep_deg = math.degrees(sweep)
     return {"ut": t_b, "prograde_dv": dv, "tof": tof, "lead_angle": lead, "required_lead": required,
-            "lead_angle_at_start": lead_now, "synodic_period": synodic, "arrival_radius": r_arr}
+            "lead_angle_at_start": lead_now, "synodic_period": synodic, "arrival_radius": r_arr,
+            "sweep_deg": sweep_deg, "phase_error": phase_error,
+            "burn_point": "general" if require_apsis else "any"}
 
 
 def escape_time(mu: float, r_pe: float, v_inf: float, r_exit: float) -> float:
