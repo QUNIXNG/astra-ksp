@@ -5,4 +5,3 @@ a slide rule (orbital-mechanics calculators), an engineering desk (parts + craft
 flight controls (commands plus short-horizon reflexes). It never ships a mission script.
 """
 
-__version__ = "2.0.0"
