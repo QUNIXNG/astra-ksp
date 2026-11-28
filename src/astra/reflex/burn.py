@@ -112,6 +112,29 @@ def burn_time_s(mass_kg: float, thrust_n: float, isp_s: float, dv: float) -> flo
     return (mass_kg - m1) * ve / thrust_n
 
 
+def rebase_start(planned_node_ut: float, node_ut_now: float, lead_s: float, now_ut: float,
+                 max_late_s: float) -> dict:
+    """Where the burn has to start now, given that the node it is aimed at may have moved.
+
+    The node is read once when the burn is prepared and again after the coast, and KSP replaces a node instead of
+    keeping it when the orbit under it changes (a save/reload, an edit, another autopilot rewriting the plan).
+    Timing the alignment against the *old* UT reported "-3793.2 s relative to the planned start" for a node that
+    was not the one in front of the vessel any more — the number looked like a piloting failure and hid the real
+    state. Aim at the node that is there, and say so when it is not the one that was planned.
+    """
+    start_ut = node_ut_now - lead_s
+    moved = node_ut_now - planned_node_ut
+    late = now_ut - start_ut
+    out: dict = {"start_ut": start_ut, "moved_s": moved, "late_s": late, "note": None, "give_up": None}
+    if abs(moved) > 1.0:
+        out["note"] = (f"the node moved {moved:+.1f} s while coasting (KSP re-creates a node rather than keeping one "
+                        f"whose orbit changed): aiming at the node that is there now, ut {node_ut_now:.1f}")
+    if late > max_late_s:
+        out["give_up"] = (f"not burned: the burn window is already {late:.1f} s past (max_late_s {max_late_s:g}); "
+                           "re-anchor the node with node_set(ut=<now + time_to_s>) and fly it again")
+    return out
+
+
 def execute_node(*, node_index: int, max_throttle: float, lead_fraction: float, align_deg: float,
                  max_late_s: float, align_margin_s: float, feather_s: float, min_throttle: float,
                  tolerance_mps: float, trim_mps: float, auto_stage: Any, stop_when: list[dict] | None,
@@ -182,6 +205,16 @@ def execute_node(*, node_index: int, max_throttle: float, lead_fraction: float, 
     node = nodes_now[node_index]
     report["node_now"] = {"ut": node.ut, "prograde_mps": node.prograde, "normal_mps": node.normal,
                           "radial_mps": node.radial, "dv_mps": node.remaining_delta_v}
+    # The node read here is the one to burn; start_ut was computed against the node as it looked before the coast.
+    rebased = rebase_start(node_snapshot["ut"], node.ut, bt * lead_fraction, sc.ut, max_late_s)
+    start_ut = rebased["start_ut"]
+    report["start_ut"] = start_ut
+    if rebased["note"]:
+        report["node_moved"] = rebased["note"]
+    if rebased["give_up"]:
+        report["result"] = rebased["give_up"]
+        report["paused"] = k.hold_for_deliberation()
+        return report
 
     # Align and coast to the start time.
     state = {"aligned_since": None}

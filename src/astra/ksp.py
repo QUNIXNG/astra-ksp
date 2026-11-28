@@ -14,7 +14,7 @@ from typing import Any, Callable
 
 from astra.bridge import Bridge
 from astra.config import CONFIG
-from astra.errors import BridgeError, NoVessel, NotConnected, WrongScene
+from astra.errors import AstraError, BridgeError, NoVessel, NotConnected, WrongScene
 
 try:  # kRPC is required for live play but not for offline tests of pure tools.
     import krpc  # type: ignore
@@ -206,14 +206,37 @@ class KSP:
         style = (style or CONFIG.pause_style or "menu").lower()
         if style == "none":
             return
-        if style != "menu" and self.scene() == "flight" and self.bridge.up():
-            try:
-                reply = self.bridge.post("/pause", {"paused": bool(value)}, timeout=10.0)
-                if bool(reply.get("paused")) == bool(value):
-                    return
-            except (BridgeError, NotConnected):
-                pass
-        self.conn.krpc.paused = bool(value)
+        if self.paused is not None and bool(self.paused) == bool(value):
+            return  # already where it was asked to be; either path would be a no-op with a failure mode
+        bridge_ok = self.scene() == "flight" and self.bridge.up()
+        # The two paths fail in opposite states: kRPC's setter is PauseMenu.Close(), which throws
+        # NullReferenceException when the game is paused *without* a menu (a bridge pause), and the bridge's
+        # FlightDriver.SetPause(false) does not clear a pause that a menu owns. Try the preferred one, then the
+        # other, instead of reporting a failed resume as "still paused".
+        attempts = [self._pause_via_krpc, self._pause_via_bridge] if style == "menu" \
+            else [self._pause_via_bridge, self._pause_via_krpc]
+        for attempt in attempts:
+            if attempt is self._pause_via_bridge and not bridge_ok:
+                continue
+            if attempt(bool(value)):
+                return
+        raise AstraError(f"could not set paused={bool(value)}",
+                         "neither kRPC's pause menu nor the bridge took it: check the bridge (/state reports "
+                         "paused and pauseMenuOpen) or press ESC in the game")
+
+    def _pause_via_krpc(self, value: bool) -> bool:
+        try:
+            self.conn.krpc.paused = bool(value)
+        except Exception:  # noqa: BLE001 - KSP throws NullReferenceException out of PauseMenu.Close()
+            return False
+        return self.paused is None or bool(self.paused) == bool(value)
+
+    def _pause_via_bridge(self, value: bool) -> bool:
+        try:
+            reply = self.bridge.post("/pause", {"paused": bool(value)}, timeout=10.0)
+        except (BridgeError, NotConnected):
+            return False
+        return bool(reply.get("paused")) == bool(value)
 
     def hold_for_deliberation(self) -> bool:
         """Pause if the policy says the sim should wait while the AI thinks. Returns paused state."""

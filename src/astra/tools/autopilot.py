@@ -293,6 +293,13 @@ def mj_ascent(
         if not engines_on:
             out["ignition"]["note"] = ("no engine is running and MechJeb may not ignite one: "
                                        "control_stage (or control_part activate) to light the ascent engine")
+    # MechJeb's ascent autopilot has no "done" that survives leaving the profile: it stays engaged and keeps
+    # commanding attitude and throttle until it reaches *its* target orbit. A vessel that ends up at another body
+    # never reaches it and the autopilot flies on — that is how an unattended 59 km Mun orbit was burned down to a
+    # −28 km periapsis. The reply has to say so, because nothing else in the API will.
+    out["stays_armed"] = ("MechJeb's ascent autopilot keeps commanding attitude and throttle until it reaches its "
+                          "target orbit; if the vessel leaves that profile (another body, a captured orbit it does "
+                          "not accept) it keeps flying. Release it with mj_abort(['ascent']) when the ascent is over")
     site_lat = reply.get("site_latitude_deg")
     if site_lat is not None:
         out["launch_site"] = {"latitude_deg": site_lat, "requested_inclination_deg": inclination_deg,
@@ -600,6 +607,15 @@ def mj_status() -> dict:
     """
     status = _status()
     status["modules_enabled"] = {m: module_enabled(status, m) for m in MJ_MODULES}
+    # Nothing else in the API says which of these keep commanding the vessel: ascent, node, landing, rendezvous,
+    # dock and smartass all write attitude (ascent and node write throttle too) until they are released. A vessel
+    # left with one of them engaged looks like a pilot error the next time someone reads the orbit.
+    armed = [m for m in ("ascent", "node", "landing", "rendezvous", "dock", "smartass")
+             if status["modules_enabled"].get(m)]
+    if armed:
+        status["still_flying"] = {"modules": armed,
+                                  "note": "MechJeb is commanding this vessel; release it with mj_abort(modules) "
+                                          "before any burn you intend to fly yourself"}
     return status
 
 
