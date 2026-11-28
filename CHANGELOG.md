@@ -1,5 +1,62 @@
 # Changelog
 
+## 2.3.0 — 2026-11-28
+
+Four fixes and one new tool, all of them from flying the thing rather than from reading it. The
+bridge is unchanged since 2.2.0: this release is Python only, and an install that already runs the
+2.2.0 bridge needs nothing rebuilt.
+
+- **`mj_maneuver` — MechJeb plans the maneuver and flies it, in one call.** The README has always
+  said MechJeb does ascent and planning, but no tool joined its planner to its executor, so every
+  maneuver in practice went `compute_maneuver` -> `node_create` -> `fly_burn`: ASTRA's own
+  arithmetic placing a node it then flew by hand. `mj_maneuver(operation, params, watch, ...)` closes
+  that, and reports the three halves that matter — the planned node, the burn that ran
+  (`node_changed`, `node_consumed`), and `orbit_check`, the orbit that came out against the one the
+  node predicted. A node more than 30 min out comes back with `far_node`: MechJeb orients before it
+  warps, so the watch would otherwise expire with the burn never flown.
+- **`compute_maneuver` and `compute_hohmann` are documented as estimates.** They were quietly doing
+  two jobs while the second one was missing; they now say what they are — the number to hold against
+  MechJeb's answer, which is the thing worth reading before a burn. `fly_burn` stays for the case
+  where the exact node matters, because `mj_execute_node` re-solves the node it is given.
+- **kRPC 0.8.0 compat, five places, after 532 tests passed on a live-ascent crash.** The single
+  test suite was green while three tools died in flight, because the fakes implemented the API kRPC
+  had deleted: `Parts.in_stage`, `AutoPilot.engage`, `Orbit.distance_at_closest_approach`, and
+  `Part.tag` (which 0.8.0 put behind a ModRequirement, so `vessel_parts` returned an error for
+  every one of 34 parts). The shims live in `astra.ksp` and route on which API exists;
+  `tests/test_krpc_contract.py` asserts against the generated `krpc.ksp.spacecenter` module so the
+  next upgrade fails in CI rather than at ignition, and the fakes now only know the 0.8.0 shape.
+- **The reflex loop runs at 50 Hz near the ground and in high dynamic pressure:** 20 Hz cannot see
+  the last metre of a landing, and a fixed 50 Hz everywhere buys jitter, not precision. The period
+  follows the situation (`TICK_FAST_S` within 500 m of the surface, or above 20 kPa), with
+  hysteresis so it does not oscillate. A taker-off is not "near the ground": an early version
+  spent the first 38 s of an ascent at 50 Hz because altitude alone said so.
+- **`ASTRA_STOP_FILE` cancels a running reflex** (default `.cache/STOP`): a tool call that holds the
+  service for minutes cannot be reached by another client, and kRPC's single connection is not
+  thread-safe, so a file the loop checks each tick is the only way to stop one from outside. The run
+  ends with `stopped_by.kind == "cancel"`.
+- **`ASTRA_PAUSE_STYLE` says which pause you get** (`silent` default, `menu`, `none`). A silent pause
+  is invisible in the game and ESC does nothing in it, so an AI that paused and died left a game
+  that looked frozen; a menu pause covers the view. Both are now named choices, and `set_paused`
+  falls back to the other path when one fails — kRPC's `paused=False` is `PauseMenu.Close()`, which
+  throws a NullReferenceException when no menu is open.
+- **`hohmann_to_body` solves an eccentric parking orbit instead of refusing it:** the old model
+  assumed the burn lands half an orbit later, which is false when the parking orbit is eccentric.
+  It now solves for the real swept angle and the arrival point, and the synodic period uses mean
+  motion (the instantaneous rate gave 71,888 s where the truth was 113,857 s).
+- **A node that KSP moves or deletes during a coast is noticed:** `fly_burn` re-reads the node at
+  ignition, aims at the node that is there now (reporting `node_moved`), gives up with a named
+  `node_set(ut=...)` fix when the window has already closed, and returns `not burned` if the node is
+  gone. A node 3,793 s past its start used to burn anyway.
+- **`node_set`** edits one component of a node in place: a long coast plus one apsis in the wrong
+  place no longer means deleting and retyping the whole plan.
+- **`verify_orbit`** checks the orbit against the numbers you asked for (`ok`, per-check delta and
+  tolerance), so "did the burn do what I wanted" is a field in the reply.
+- **MechJeb's own numbers are read back:** `mj_ascent` reports `apoapsis_check` (80 km requested and
+  546 km produced, once, with nothing in the reply to show it), `settings_check` (the settings
+  MechJeb says it is running against the ones sent), `stays_armed`, and `mj_status` reports
+  `still_flying` — MechJeb commands the vessel until it reaches its target orbit, and a burn flown
+  under it is not yours.
+
 ## 2.2.0 — 2026-11-28
 
 - **`hohmann_to_body` refuses an eccentric parking orbit:** above e=0.05 the tool now raises instead
